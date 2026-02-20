@@ -20,34 +20,33 @@ The workflow follows the British Ecological Society’s Guide to Reproducible Co
 
 #### Directory structure:
 
-* Data 🔢/Raw Data			# Unmodified downloaded imagery
-* Data 🔢/Processed Data		# Cropped, masked, cleaned rasters created by code
+* Data 🔢/Input Data			# These are the data which I've received (either from satellite imagery providers or collaborators) and remain unaltered 
+* Data 🔢/Processed Data		# Data which were in some way modified, such as cleaned datasets, buffered shapefiles, processed rasters
 * Scripts/			# All R scripts used in preprocessing
-* Results 📈📉/				# Figures, summaries, metadata
+* Results 📈📉/				# Figures, summaries, metadata, and finalised raster files
 
 
 
-Each site has its own folder under Raw Data and Processed Data.
+Each site has its own folder under Input Data and Processed Data.
 
 
 
 ### Workflow:
 
-**00\_setup.R**
+**00_setup.R**
 
 * Loads packages, defines paths, ensures reproducibility, and sets up the session.
 
 
 
-**01\_Preprocess\_Sites.R**
+**01_Analyse_Macchia_Sacra.R**
 
-* Loads Landsat 7 scenes
-* Loads Knepp AOI (MultiPolygon shapefile)
-* Reprojects AOI if necessary
-* Crops + masks all scenes
-* Saves output to Data 🔢/Processed Data/Knepp Estate/
-
-
+* Loads Macchia Sacra PPI and NDVI data.
+* Conducts Shannon-Wiener Index analysis.
+* Conducts classical Rao's Q Index analysis.
+* Conducts multidimensional  Rao's Q Index analysis.
+* Conducts PERMANOVA performance analysis of indices' performance.
+* Tests comparative ability of the different approaches to remove artefacts in the satellite data.
 
 ### Reproducibility:
 
@@ -55,7 +54,7 @@ All packages are version-controlled via the renv
 
 
 
-No manual data manipulation (everything done via scripts)
+All input data is processed reproducibly using R scripts
 
 
 
@@ -63,7 +62,7 @@ All output filenames are constructed programmatically
 
 
 
-No setwd() used, paths are handled with the here package
+No setwd() used, paths are handled with the here package so the project can be easily rerun on any other machine
 
 
 
@@ -87,3 +86,4 @@ Maintainer: Elliot Samuel Shayle
 
 University of Marburg
 
+Email 📧: elliot.shayle.18@alumni.ucl.ac.uk || elliot.shayle@staff.uni-marburg.de
