@@ -10,6 +10,11 @@ install.packages("sf")
 install.packages("here")
 install.packages("dplyr")
 install.packages("stringr")
+install.packages("rasterdiv")
+install.packages("twdtw")
+install.packages("vegan")
+install.packages("snow")
+install.packages("pROC")
 
 ## Load libraries
 library(terra)
@@ -17,13 +22,18 @@ library(sf)
 library(here)
 library(dplyr)
 library(stringr)
+library(rasterdiv)
+library(twdtw)
+library(vegan)
+library(snow)
+library(pROC)
 
 ### Reproducibility settings ####
 options(scipen = 999)
 set.seed(123)
 
 ### Path definitions ####
-RawData <- here::here("Data 🔢/Raw Data")
+RawData <- here::here("Data 🔢/Input Data")
 ProcessedData <- here::here("Data 🔢/Processed Data")
 Results <- here::here("Results 📈📉")
 
