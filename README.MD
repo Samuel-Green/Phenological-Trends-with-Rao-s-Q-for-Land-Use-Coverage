@@ -20,7 +20,7 @@ The workflow follows the British Ecological Society’s Guide to Reproducible Co
 
 #### Directory structure:
 
-* Data 🔢/Input Data			# These are the data which I've received (either from satellite imagery providers or collaborators) and remain unaltered 
+* Data 🔢/Input Data			# These are the data which I've received (either from satellite imagery providers or collaborators) and remain unaltered
 * Data 🔢/Processed Data		# Data which were in some way modified, such as cleaned datasets, buffered shapefiles, processed rasters
 * Scripts/			# All R scripts used in preprocessing
 * Results 📈📉/				# Figures, summaries, metadata, and finalised raster files
@@ -33,13 +33,13 @@ Each site has its own folder under Input Data and Processed Data.
 
 ### Workflow:
 
-**00_setup.R**
+**00\_setup.R**
 
 * Loads packages, defines paths, ensures reproducibility, and sets up the session.
 
 
 
-**01_Analyse_Macchia_Sacra.R**
+**01\_Analyse\_Macchia\_Sacra.R**
 
 * Loads Macchia Sacra PPI and NDVI data.
 * Conducts Shannon-Wiener Index analysis.
@@ -47,6 +47,8 @@ Each site has its own folder under Input Data and Processed Data.
 * Conducts multidimensional  Rao's Q Index analysis.
 * Conducts PERMANOVA performance analysis of indices' performance.
 * Tests comparative ability of the different approaches to remove artefacts in the satellite data.
+
+
 
 ### Reproducibility:
 
@@ -86,4 +88,5 @@ Maintainer: Elliot Samuel Shayle
 
 University of Marburg
 
-Email 📧: elliot.shayle.18@alumni.ucl.ac.uk || elliot.shayle@staff.uni-marburg.de
+Email 📧: [elliot.shayle.18@alumni.ucl.ac.uk](mailto:elliot.shayle.18@alumni.ucl.ac.uk?subject=Rao's%20Q%20and%20TWDTW%20Project%20Inquiry) || [elliot.shayle@staff.uni-marburg.de](mailto:elliot.shayle@staff.uni-marburg.de?subject=Rao's%20Q%20and%20TWDTW%20Project%20Inquiry)
+
