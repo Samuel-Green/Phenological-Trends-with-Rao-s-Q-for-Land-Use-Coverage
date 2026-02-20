@@ -85,29 +85,28 @@ dev.off() # This actually exports the plot to the file
 ## In the Hackathon, we first calculated, Shannon's H.
 ## It's applied to the mean yearly trajectory (i.e., collapse the time series first)
 
-message("Calculating Shannon diversity...")
+message("Calculating Shannon-Wiener diversity index...")
 
 PPI_mean_raster <- app(PPI_ts[[1:146]], fun = mean, na.rm = TRUE) # Subset to just the layers with observations (not standard deviations)
 
-PPI_mean_matrix <- matrix(NA, nrow = nrow(PPI_mean_raster), ncol = ncol(PPI_mean_raster)) # Create an empty matrix to store cell values from the spatial raster
+# Round to 2 decimals to avoid numerical saturation
 
-PPI_mean_matrix[1:dim(PPI_mean_matrix)[1], 1:dim(PPI_mean_matrix)[2]] <- values(PPI_mean_raster) # Fill the matrix with values from the spatial raster, maintaining the same dimensions as the original raster
+PPI_mean_raster2dec <- round(PPI_mean_raster, 2)
 
-ShannonH_matrix <- rasterdiv::ShannonS( # Calculate Shannon's H (Shannon-Wiener Index) for the matrix
-  x = PPI_mean_matrix,
-  window = 1,
-  na.tolerance = 0
+# Calculate Shannon with moving window = 3
+
+ShannonH_raster <- rasterdiv::Shannon(
+  x = PPI_mean_raster2dec,
+  window = 3,
+  na.tolerance = 0,
+  rasterOut = TRUE
 )
-
-ShannonH_raster <- rasterize(ShannonH_matrix, PPI_mean_raster)
-
-values(ShannonH_raster) <- ShannonH_matrix
 
 writeRaster(
   ShannonH_raster,
   filename = file.path(Macchia_Results, "Macchia_Sacra_ShannonH_raster.tif"),
   overwrite = TRUE
-) # Export the data as a GeoTIF
+)
 
 ### 2. Classic Rao's Q  ####
 
@@ -122,7 +121,7 @@ Rao_classic <- paRao(
   window = 3,
   alpha = 2,
   na.tolerance = 0,
-  simplify = 3,
+  simplify = 2,
   method = "classic"
 )
 
@@ -150,7 +149,7 @@ Rao_TWDTW <- paRao(
   window = 3,
   alpha = 2,
   na.tolerance = 0,
-  simplify = 3,
+  simplify = 2,
   np = 6, # Number of cores to use (I'd rather not wait forever)
   progBar = TRUE,
   method = "multidimension",
