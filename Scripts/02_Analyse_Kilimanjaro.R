@@ -79,10 +79,6 @@ KiliNP_Timeseries <- rast(KiliNP_Cropped_Files)
 
 Kili.years <- sub(".*_(\\d{4})_Cropped\\.tif", "\\1", basename(KiliNP_Cropped_Files))
 
-# Define month names explicitly
-
-month.names <- month.name  # built-in R constant
-
 # Create new layer names
 
 Kili.layer.names <- unlist(lapply(Kili.years, function(y) {
@@ -108,8 +104,16 @@ blank_layers
 # There are many pixels with NA values scattered throughout the raster stack
 # Create logical mask: TRUE only where ALL layers are non-NA
 
-Kili.pixel.mask <- app(KiliNP_Timeseries, function(x) all(!is.na(x)))
+Kili.pixel.mask <- app(KiliNP_Timeseries, function(x) all(!is.na(x))) # Will consume lots of RAM
 
 # Mask out incomplete pixels (FALSE becomes NA)
 
-KiliNP_Timeseries_Clean <- mask(KiliNP_Timeseries, Kili.pixel.mask, maskvalues = 0)
+KiliNP_Timeseries_Clean <- mask(KiliNP_Timeseries, Kili.pixel.mask, maskvalues = 0) # This is very computationally challenging, run on HPC
+
+# Export raster so I don't have to calculate it every time
+
+writeRaster(KiliNP_Timeseries_Clean, file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
+
+# And then load back in the raster
+
+KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"))
