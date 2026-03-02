@@ -20,8 +20,8 @@ library(pROC)
 
 # Input NetCDF files provided by collaborators
 
-PPI_file  <- file.path(Macchia_Raw, "ppiMSExp.nc")
-NDVI_file <- file.path(Macchia_Raw, "ndviMSExp.nc")
+PPI_file  <- file.path(Macchia_Input, "ppiMSExp.nc")
+NDVI_file <- file.path(Macchia_Input, "ndviMSExp.nc")
 
 # Output directory for this script
 
@@ -207,7 +207,7 @@ dev.off()
 
 # Path to the land cover classification shapefile from Matteo
 
-MacchiaSacra_LandCover_File <- file.path(Macchia_Raw, "MS_Data_From_Matteo/MacchiaSacra_Shapefile/MacchiaSacra_32632.shp")
+MacchiaSacra_LandCover_File <- file.path(Macchia_Input, "MS_Data_From_Matteo/MacchiaSacra_Shapefile/MacchiaSacra_32632.shp")
 
 # Read vector landcover
 

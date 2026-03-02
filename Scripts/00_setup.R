@@ -34,14 +34,14 @@ options(scipen = 999)
 set.seed(123)
 
 ### Path definitions ####
-RawData <- here::here("Data 🔢/Input Data")
+InputData <- here::here("Data 🔢/Input Data")
 ProcessedData <- here::here("Data 🔢/Processed Data")
 Results <- here::here("Results 📈📉")
 
 ### Site-specific paths ####
-Macchia_Raw <- file.path(RawData, "Macchia Sacra")
-Knepp_Raw <- file.path(RawData, "Knepp Estate")
-KiliNP_Raw <- file.path(RawData, "Kilimanjaro")
+Macchia_Input <- file.path(InputData, "Macchia Sacra")
+Knepp_Input <- file.path(InputData, "Knepp Estate")
+KiliNP_Input <- file.path(InputData, "Kilimanjaro")
 
 Macchia_Processed <- file.path(ProcessedData, "Macchia Sacra")
 Knepp_Processed <- file.path(ProcessedData, "Knepp Estate")

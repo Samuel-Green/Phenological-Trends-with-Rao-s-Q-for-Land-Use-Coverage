@@ -1,0 +1,109 @@
+{
+    "type": "Feature",
+    "stac_version": "1.0.0",
+    "id": "KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY",
+    "properties": {
+        "description": "\\\\masc-smb.hrz.uni-marburg.de\\ag_nauss\\share\\backup_182\\memory\\backup\\archive\\casestudies\\Kilimanjaro_SES\\Kili_force\\kili_force_august2023\\kili_force_august2023\\level3\\mosaic\\cropped_kili_meru\\cog_files\\KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY.tif",
+        "driver": "GTiff",
+        "driver_long_name": "GeoTIFF",
+        "sensor": "Sentinel-2",
+        "original tiles": "T37MBS and T37MCS",
+        "study area": "Mounts Kilimanjaro and Meru (KM)",
+        "processing version": "FORCE level 3",
+        "software used": "FORCE (https://force-eo.readthedocs.io/en/latest/components/higher-level/tsa/indices.html)",
+        "width": 13800,
+        "height": 10362,
+        "crs": "PROJCS[\"WGS 84 / UTM zone 37S\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",39],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",10000000],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH],AUTHORITY[\"EPSG\",\"32737\"]]",
+        "pixel_size_x": 10.0,
+        "pixel_size_y": 10.0,
+        "AREA_OR_POINT": "Area",
+        "metadata_domains": [
+            "IMAGE_STRUCTURE",
+            "",
+            "DERIVED_SUBDATASETS"
+        ],
+        "image_structure_metadata": {
+            "COMPRESSION": "LZW",
+            "INTERLEAVE": "BAND",
+            "LAYOUT": "COG"
+        },
+        "derived_subdatasets_metadata": {
+            "DERIVED_SUBDATASET_1_NAME": "DERIVED_SUBDATASET:LOGAMPLITUDE:\\\\masc-smb.hrz.uni-marburg.de\\ag_nauss\\share\\backup_182\\memory\\backup\\archive\\casestudies\\Kilimanjaro_SES\\Kili_force\\kili_force_august2023\\kili_force_august2023\\level3\\mosaic\\cropped_kili_meru\\cog_files\\KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY.tif",
+            "DERIVED_SUBDATASET_1_DESC": "log10 of amplitude of input bands from \\\\masc-smb.hrz.uni-marburg.de\\ag_nauss\\share\\backup_182\\memory\\backup\\archive\\casestudies\\Kilimanjaro_SES\\Kili_force\\kili_force_august2023\\kili_force_august2023\\level3\\mosaic\\cropped_kili_meru\\cog_files\\KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY.tif"
+        },
+        "band_info_list": [
+            {
+                "band_number": 1,
+                "data_type": "Float32"
+            }
+        ],
+        "nodata_value": NaN,
+        "band_pattern": "NDV",
+        "band_formula": "Normalized Difference Vegetation Index, (B8A - B04) / (B8A + B04)",
+        "provenance_dates": "2018 August 02, 2018 December 25, 2018 May 14, 2018 October 11, 2018 February 08, 2018 January 19, 2018 October 01, 2018 February 23, 2018 July 23, 2018 February 28, 2018 September 16, 2018 May 29, 2018 November 05, 2018 August 27, 2018 June 28, 2018 June 23, 2018 September 11, 2018 October 21, 2018 June 08, 2018 May 24, 2018 September 26, 2018 February 18, 2018 March 10, 2018 January 14, 2018 January 24, 2018 January 29, 2018 November 30, 2018 August 07, 2018 November 10, 2018 March 05, 2018 February 13, 2018 November 15, 2018 October 31, 2018 July 28, 2018 October 06",
+        "monthly_images_summary": {
+            "January": 4,
+            "February": 5,
+            "March": 2,
+            "April": 0,
+            "May": 3,
+            "June": 3,
+            "July": 2,
+            "August": 3,
+            "September": 3,
+            "October": 5,
+            "November": 4,
+            "December": 1
+        },
+        "datetime": "2023-10-16T13:54:01.640756Z"
+    },
+    "geometry": [
+        [
+            218755.96270255232,
+            9595474.867625862,
+            356755.9627025523,
+            9699094.867625862
+        ],
+        {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [
+                        218755.96270255232,
+                        9595474.867625862
+                    ],
+                    [
+                        218755.96270255232,
+                        9699094.867625862
+                    ],
+                    [
+                        356755.9627025523,
+                        9699094.867625862
+                    ],
+                    [
+                        356755.9627025523,
+                        9595474.867625862
+                    ],
+                    [
+                        218755.96270255232,
+                        9595474.867625862
+                    ]
+                ]
+            ]
+        }
+    ],
+    "links": [],
+    "assets": {
+        "KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY.tif": {
+            "href": "/masc-smb.hrz.uni-marburg.de/ag_nauss/share/backup_182/memory/backup/archive/casestudies/Kilimanjaro_SES/Kili_force/kili_force_august2023/kili_force_august2023/level3/mosaic/cropped_kili_meru/cog_files/KM_EPSG32737_SEN2_L3_BOA_NDV_2018_FBY.tif",
+            "type": "image/tiff; application=geotiff; profile=cloud-optimized"
+        }
+    },
+    "bbox": [
+        218755.96270255232,
+        9699094.867625862,
+        356755.9627025523,
+        9595474.867625862
+    ],
+    "stac_extensions": []
+}
