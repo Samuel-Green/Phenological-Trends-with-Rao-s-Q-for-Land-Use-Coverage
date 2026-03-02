@@ -257,6 +257,7 @@ if (crs(KiliNP_ShannonH_Raster) != crs(KiliNP_LandCover_Vector)){
 
 # Crop and mask diversity rasters to ground truth extent
 
+
 Kili_Shannon_crop     <- crop(KiliNP_ShannonH_Raster, KiliNP_LandCover_Vector)
 KiliNP_Classic_RaoQ_crop <- crop(KiliNP_Classic_RaoQ$window.3$alpha.2, KiliNP_LandCover_Vector)
 Kili_Rao_TWDTW_crop   <- crop(Kili_Rao_TWDTW$window.3$alpha.2, KiliNP_LandCover_Vector)
