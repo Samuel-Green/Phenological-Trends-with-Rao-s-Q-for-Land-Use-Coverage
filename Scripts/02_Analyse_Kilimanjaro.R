@@ -98,7 +98,7 @@ blank_layers <- for(i in 1:nlyr(KiliNP_Timeseries)) {
   if(i < nlyr(KiliNP_Timeseries)) readline(prompt = "Press [enter] to continue")
 }
 
-blank_layers
+blank_layers # This is just to inspect each layer for the user's interest
 
 ## Only pixels with a complete set of data for every layer are suitable for analysis
 # There are many pixels with NA values scattered throughout the raster stack
@@ -117,3 +117,231 @@ writeRaster(KiliNP_Timeseries_Clean, file.path(KiliNP_Processed, "KiliNP_2017-20
 # And then load back in the raster
 
 KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"))
+
+### Inspect temporal structure ####
+
+## Unlike Macchia Sacra NetCDF, this GeoTIFF stack does not contain explicit time metadata
+## Therefore, we must construct the time vector manually from layer names
+
+message("Constructing time vector for Kilimanjaro time series...")
+
+# Extract year and month from layer names
+# Layer format: "2017 - January"
+
+#Kili.layer.names <- names(KiliNP_Timeseries_Clean)
+
+Kili.dates <- as.Date(
+  paste0(
+    sub(" - .*", "", names(KiliNP_Timeseries_Clean)), "-",
+    match(sub(".* - ", "", names(KiliNP_Timeseries_Clean)), month.name),
+    "-01"
+  ),
+  format = "%Y-%m-%d"
+)
+
+stopifnot(length(Kili.dates) == nlyr(KiliNP_Timeseries_Clean))
+
+message(paste("Temporal length:", length(Kili.dates), "layers"))
+
+### 1. Shannon-Wiener Index ####
+
+## As in Macchia Sacra, collapse the time series to mean annual trajectory first
+
+message("Calculating Shannon-Wiener diversity index for Kilimanjaro...")
+
+Kili_mean_raster <- app(KiliNP_Timeseries_Clean, fun = mean, na.rm = TRUE)
+
+# Round to 2 decimals to avoid numerical saturation
+
+Kili_mean_raster2dec <- round(Kili_mean_raster, 2)
+
+# Calculate Shannon with moving window = 3
+
+Kili_ShannonH_raster <- rasterdiv::Shannon(
+  x = Kili_mean_raster2dec,
+  window = 3,
+  na.tolerance = 0,
+  rasterOut = TRUE
+)
+
+writeRaster(
+  Kili_ShannonH_raster,
+  filename = file.path(KiliNP_Results, "KiliNP_ShannonH_raster.tif"),
+  overwrite = TRUE
+)
+
+### 2. Classic Rao's Q  ####
+
+message("Calculating classical Rao's Q for Kilimanjaro...")
+
+Kili_Rao_classic <- paRao(
+  x = Kili_mean_raster,
+  window = 3,
+  alpha = 2,
+  na.tolerance = 0,
+  simplify = 2,
+  method = "classic"
+)
+
+writeRaster(
+  Kili_Rao_classic$window.3$alpha.2,
+  filename = file.path(KiliNP_Results, "KiliNP_RaoQ_Classic_raster.tif"),
+  overwrite = TRUE
+)
+
+### 3. Rao's Q with TWDTW ####
+
+message("Calculating Rao's Q with TWDTW distance for Kilimanjaro...")
+
+Kili_Rao_TWDTW <- paRao(
+  x = KiliNP_Timeseries_Clean,
+  time_vector = Kili.dates,
+  window = 3,
+  alpha = 2,
+  na.tolerance = 0,
+  simplify = 2,
+  np = 6,
+  progBar = TRUE,
+  method = "multidimension",
+  dist_m = "twdtw",
+  midpoint = 6,          # Midpoint of annual cycle (June)
+  stepness = -0.5,
+  cycle_length = "year",
+  time_scale = "month"   # Now explicitly monthly data
+)
+
+writeRaster(
+  Kili_Rao_TWDTW$window.3$alpha.2,
+  filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
+  overwrite = TRUE
+)
+
+### Export rasters for comparison ####
+
+Kili_Comparison_Rasters <- c(
+  KiliNP_Timeseries_Clean[[nlyr(KiliNP_Timeseries_Clean)]],
+  Kili_ShannonH_raster,
+  Kili_Rao_classic$window.3$alpha.2,
+  Kili_Rao_TWDTW$window.3$alpha.2
+)
+
+names(Kili_Comparison_Rasters) <- c(
+  "Sentinel-2 NDVI",
+  "Shannon's H",
+  "Classic Rao's Q",
+  "TWDTW Rao's Q"
+)
+
+writeRaster(
+  Kili_Comparison_Rasters,
+  filename = file.path(KiliNP_Results, "KiliNP_Diversity_Comparison.tif"),
+  overwrite = TRUE
+)
+
+png(file.path(KiliNP_Results, "KiliNP_Indices_Comparison.png"),
+    width = 2560, height = 1440, res = 150)
+
+plot(Kili_Comparison_Rasters)
+
+dev.off()
+
+### Assess index performance using vegetation ground truth ####
+
+message("Assessing diversity indices against vegetation ground truth...")
+
+# Ensure CRS matches
+
+if (crs(Kili_ShannonH_raster) != crs(KiliNP_LandCover_Vector)){
+  KiliNP_LandCover_Vector <- project(KiliNP_LandCover_Vector, crs(Kili_ShannonH_raster))
+}
+
+# Crop and mask diversity rasters to ground truth extent
+
+Kili_Shannon_crop     <- crop(Kili_ShannonH_raster, KiliNP_LandCover_Vector)
+Kili_Rao_classic_crop <- crop(Kili_Rao_classic$window.3$alpha.2, KiliNP_LandCover_Vector)
+Kili_Rao_TWDTW_crop   <- crop(Kili_Rao_TWDTW$window.3$alpha.2, KiliNP_LandCover_Vector)
+
+Kili_Shannon_masked     <- mask(Kili_Shannon_crop, KiliNP_LandCover_Vector)
+Kili_Rao_classic_masked <- mask(Kili_Rao_classic_crop, KiliNP_LandCover_Vector)
+Kili_Rao_TWDTW_masked   <- mask(Kili_Rao_TWDTW_crop, KiliNP_LandCover_Vector)
+
+# Rasterise vegetation class
+
+KiliNP_LandCover_Vector$CAT <- KiliNP_LandCover_Vector$decsr
+
+KiliNP_LandCover_Raster <- rasterize(
+  KiliNP_LandCover_Vector,
+  Kili_Shannon_masked,
+  field = "CAT"
+)
+
+### Convert to dataframe for PERMANOVA ####
+
+Kili_Indices_Comparison_Raster <- c(
+  Kili_Shannon_masked,
+  Kili_Rao_classic_masked,
+  Kili_Rao_TWDTW_masked,
+  KiliNP_LandCover_Raster
+)
+
+names(Kili_Indices_Comparison_Raster) <- c(
+  "ShannonH",
+  "RaosQ_Classic",
+  "RaosQ_TWDTW",
+  "Veg_GroundTruth"
+)
+
+Kili_Indices_Comparison_DF <- as.data.frame(
+  Kili_Indices_Comparison_Raster,
+  na.rm = TRUE
+)
+
+colnames(Kili_Indices_Comparison_DF) <- c(
+  "ShannonH",
+  "RaosQ_Classic",
+  "RaosQ_TWDTW",
+  "Veg_GroundTruth"
+)
+
+### PERMANOVA ####
+
+PERMANOVA_Shannon <- adonis2(
+  ShannonH ~ Veg_GroundTruth,
+  data = Kili_Indices_Comparison_DF,
+  permutations = 9999
+)
+
+PERMANOVA_RaosQ_Classic <- adonis2(
+  RaosQ_Classic ~ Veg_GroundTruth,
+  data = Kili_Indices_Comparison_DF,
+  permutations = 9999
+)
+
+PERMANOVA_RaosQ_TWDTW <- adonis2(
+  RaosQ_TWDTW ~ Veg_GroundTruth,
+  data = Kili_Indices_Comparison_DF,
+  permutations = 9999
+)
+
+Kili_PERMANOVA_Results <- data.frame(
+  Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
+  R2 = c(
+    PERMANOVA_Shannon$R2[1],
+    PERMANOVA_RaosQ_Classic$R2[1],
+    PERMANOVA_RaosQ_TWDTW$R2[1]
+  ),
+  F = c(
+    PERMANOVA_Shannon$F[1],
+    PERMANOVA_RaosQ_Classic$F[1],
+    PERMANOVA_RaosQ_TWDTW$F[1]
+  ),
+  p_value = c(
+    PERMANOVA_Shannon$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
+  )
+)
+
+print(Kili_PERMANOVA_Results)
+
+message("Kilimanjaro analysis complete.")
