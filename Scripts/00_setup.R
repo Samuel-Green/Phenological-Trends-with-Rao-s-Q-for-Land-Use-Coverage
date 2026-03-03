@@ -11,6 +11,7 @@ install.packages("here")
 install.packages("dplyr")
 install.packages("stringr")
 #install.packages("rasterdiv")
+install.packages("remotes")
 remotes::install_github("mattmar/rasterdiv") # [20/02/2026]: Package author recommends using the pre-release version as it has a bug fix
 install.packages("twdtw")
 install.packages("vegan")
