@@ -157,6 +157,14 @@ message("Calculating Shannon-Wiener diversity index for Kilimanjaro...")
 
 KiliNP_Mean_Raster <- app(KiliNP_Timeseries_Clean, fun = mean, na.rm = TRUE)
 
+# Export raster so I don't have to calculate it every time
+
+writeRaster(KiliNP_Mean_Raster, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif"), overwrite = TRUE)
+
+# And then load back in the raster
+
+KiliNP_Mean_Raster <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif"))
+
 # Round to 2 decimals to avoid numerical saturation
 
 KiliNP_Mean_Raster2dec <- round(KiliNP_Mean_Raster, 2)
