@@ -197,6 +197,8 @@ writeRaster(
   overwrite = TRUE
 )
 
+KiliNP_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif"))
+
 ### 2. Classic Rao's Q  ####
 
 message("Calculating classical Rao's Q for Kilimanjaro...")
@@ -207,7 +209,8 @@ KiliNP_Classic_RaoQ <- paRao(
   alpha = 2,
   na.tolerance = 0,
   simplify = 2,
-  method = "classic"
+  method = "classic",
+  np = detectCores() -1
 )
 
 writeRaster(
@@ -227,7 +230,7 @@ Kili_Rao_TWDTW <- paRao(
   alpha = 2,
   na.tolerance = 0,
   simplify = 2,
-  np = 6,
+  np = detectCores() -1,
   progBar = TRUE,
   method = "multidimension",
   dist_m = "twdtw",
