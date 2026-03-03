@@ -20,11 +20,17 @@ library(terra)
 ### Define the  file paths and import the site data ####
 ## NOTICE: Elliot's computer is low on storage, so some large GeoTIFFs may have also been loaded from external hard drives not listed below
 
+# Output directory for this script
+
+KiliNP_Results <- file.path(Results, "Kilimanjaro")
+dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
+
 # Load KiliNP_LandCover_Vector boundary
 
 KiliNP_LandCover_Vector <- vect(paste0(KiliNP_Input,"/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp"))
 
 # List raster files
+# Only run these lines if I haven't already generated my cropped raster files (it takes forever)
 
 tmp.files <- list.files(KiliNP_Input, pattern = "\\FBM.tif$", full.names = TRUE)
 
@@ -155,18 +161,31 @@ KiliNP_Mean_Raster <- app(KiliNP_Timeseries_Clean, fun = mean, na.rm = TRUE)
 
 KiliNP_Mean_Raster2dec <- round(KiliNP_Mean_Raster, 2)
 
-# Calculate Shannon with moving window = 3
+# Run ShannonS
 
-KiliNP_ShannonH_Raster <- rasterdiv::Shannon(
-  x = KiliNP_Mean_Raster2dec,
+KiliNP.ShannonH.matrix <- rasterdiv::ShannonS(
+  x = terra::as.matrix(KiliNP_Mean_Raster2dec, wide = TRUE), # The function here converts my raster to a matrix suitable for analysis
   window = 3,
-  na.tolerance = 0,
-  rasterOut = TRUE
+  na.tolerance = 0
 )
+
+## Now turn the matrix of Shannon H values into a spatial raster
+# Put it in a raster signature
+
+KiliNP_ShannonH_Raster <- rast(KiliNP.ShannonH.matrix)
+
+# Make the raster's extent and CRS match the original raster
+
+ext(KiliNP_ShannonH_Raster) <- ext(KiliNP_Mean_Raster2dec)
+crs(KiliNP_ShannonH_Raster) <- crs(KiliNP_Mean_Raster2dec)
+
+names(KiliNP_ShannonH_Raster) <- "Shannon's H"
+
+# Export the raster
 
 writeRaster(
   KiliNP_ShannonH_Raster,
-  filename = file.path(KiliNP_Results, "KiliNP_ShannonH_raster.tif"),
+  filename = file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif"),
   overwrite = TRUE
 )
 

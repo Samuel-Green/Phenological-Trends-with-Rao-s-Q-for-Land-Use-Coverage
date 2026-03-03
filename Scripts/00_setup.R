@@ -16,6 +16,7 @@ remotes::install_github("mattmar/rasterdiv") # [20/02/2026]: Package author reco
 install.packages("twdtw")
 install.packages("vegan")
 install.packages("snow")
+install.packages("parallel")
 install.packages("pROC")
 
 ## Load libraries
@@ -28,6 +29,7 @@ library(rasterdiv)
 library(twdtw)
 library(vegan)
 library(snow)
+library(parallel)
 library(pROC)
 
 ### Reproducibility settings ####

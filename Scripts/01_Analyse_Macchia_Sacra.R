@@ -95,15 +95,28 @@ PPI_mean_raster2dec <- round(PPI_mean_raster, 2)
 
 # Calculate Shannon with moving window = 3
 
-ShannonH_raster <- rasterdiv::Shannon(
-  x = PPI_mean_raster2dec,
+ShannonH.matrix <- rasterdiv::ShannonS(
+  x = terra::as.matrix(PPI_mean_raster2dec, wide = TRUE),
   window = 3,
-  na.tolerance = 0,
-  rasterOut = TRUE
+  na.tolerance = 0
 )
 
+## Now turn the matrix of Shannon H values into a spatial raster
+# Put it in a raster signature
+
+ShannonH_Raster <- rast(ShannonH.matrix)
+
+# Make the raster's extent and CRS match the original raster
+
+ext(ShannonH_Raster) <- ext(PPI_mean_raster2dec)
+crs(ShannonH_Raster) <- crs(PPI_mean_raster2dec)
+
+names(ShannonH_Raster) <- "Shannon's H"
+
+# Export the raster
+
 writeRaster(
-  ShannonH_raster,
+  ShannonH_Raster,
   filename = file.path(Macchia_Results, "Macchia_Sacra_ShannonH_raster.tif"),
   overwrite = TRUE
 )
