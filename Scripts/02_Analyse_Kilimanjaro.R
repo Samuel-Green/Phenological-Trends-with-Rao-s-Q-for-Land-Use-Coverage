@@ -169,6 +169,11 @@ KiliNP_Mean_Raster <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_
 
 KiliNP_Mean_Raster2dec <- round(KiliNP_Mean_Raster, 2)
 
+# Export and reload the rounded raster so I don't have to calculate it every time
+
+writeRaster(KiliNP_Mean_Raster2dec, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif"), overwrite = TRUE)
+KiliNP_Mean_Raster2dec <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif"))
+
 # Run ShannonS
 
 KiliNP.ShannonH.matrix <- rasterdiv::ShannonS(
@@ -189,7 +194,7 @@ crs(KiliNP_ShannonH_Raster) <- crs(KiliNP_Mean_Raster2dec)
 
 names(KiliNP_ShannonH_Raster) <- "Shannon's H"
 
-# Export the raster
+# Export the raster or reload it if necessary
 
 writeRaster(
   KiliNP_ShannonH_Raster,
@@ -200,17 +205,178 @@ writeRaster(
 KiliNP_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif"))
 
 ### 2. Classic Rao's Q  ####
+## Due to the large size of the raster, I need to tile it so that it can be run
+## The tiles will be stitched back together once they're computed
 
 message("Calculating classical Rao's Q for Kilimanjaro...")
 
+### Step 1: Create a grid to define zones for tiling
+
+# Optional but recommended: trim outer NA borders
+
+trimmed.KiliNP_Mean_Raster <- trim(KiliNP_Mean_Raster)
+
+# We want approximately 72 tiles (not too many, not too few)
+
+kili.total.tiles <- 72
+kili.aspect.ratio <- ncol(trimmed.KiliNP_Mean_Raster) / nrow(trimmed.KiliNP_Mean_Raster)
+
+# find factor pairs of 72
+
+tiling.factors <- expand.grid(
+  ncols = 1:kili.total.tiles,
+  nrows = 1:kili.total.tiles
+)
+
+# Subset to just pairs which equal "kili.total.tiles" when multiplied
+
+tiling.factors <- tiling.factors[tiling.factors$ncols * tiling.factors$nrows == kili.total.tiles, ]
+
+## choose the pair closest to the raster's aspect ratio
+# First, create a new column calculating the difference in aspect ratio
+
+tiling.factors$ratio_diff <- abs((tiling.factors$ncols / tiling.factors$nrows) - kili.aspect.ratio)
+
+# Now find the pair which has the lowest distance from a square 1:1 aspect ratio
+
+best.tile.size <- tiling.factors[which.min(tiling.factors$ratio_diff), ]
+
+# And save that for later usage
+
+kili.cols <- best.tile.size$ncols
+kili.rows <- best.tile.size$nrows
+
+# Create spatial polygons to specify what the tile sizes should be
+
+kili.tiling.grid <- as.polygons(
+  rast(
+    ext(trimmed.KiliNP_Mean_Raster),
+    ncols = kili.cols,
+    nrows = kili.rows,
+    crs = crs(trimmed.KiliNP_Mean_Raster)
+  )
+)
+
+# Window size (I think 3 is the default, but this can be changed as necessary)
+
+RaoQ.window.size <- 3
+kili.tile.overlap <- floor(RaoQ.window.size / 2)
+
+# Create a directory to put the tiles in
+
+kili.tile.dir <- "Processed Data/Kilimanjaro/tiles"
+dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
+
+## Finally, create the tiles
+
+kili.tiles <- makeTiles(
+  trimmed.KiliNP_Mean_Raster, # Trimmed for easier computation
+  y = kili.tiling.grid, # Specifies how the tiles should be allocated
+  buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
+  filename = file.path(kili.tile.dir, "KiliNP_MeanNDVI_Tile-.tif"),
+  overwrite = TRUE
+)
+
+### Step 2: Compute classic Rao's Q for each tile
+## Firstly, I need to setup the environment for parallelisation
+# Create a subfolder to store the classic Rao's Q output tiles
+
+kili.rao.dir  <- file.path(kili.tile.dir, "rao-utputs") 
+dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
+
+## Create a computing cluster to parallelise the calculation at the tile level
+# Set the number of cores to be used by the cluster
+
+kili.cores <- max(1, detectCores() - 2)
+
+# Create the cluster (alliterative and punny names are mandatory)
+
+kili.cluster <- makeCluster(kili.cores)
+
+clusterEvalQ(kili.cluster, {
+  library(terra)
+  library(rasterdiv)
+})
+
+clusterExport(kili.cluster, c(
+  "kili.tiles",
+  "kili.rao.dir",
+  "RaoQ.window.size"
+))
+
+## Now actually run the code
+
+parLapply(kili.cluster, seq_along(kili.tiles), # Function call
+          function(i) {
+  
+  tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
+  
+  tmp.result <- paRao(
+    tmp.tile,
+    window = RaoQ.window.size,
+    alpha = 2,
+    simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
+    method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
+    np = 1 # Explicitly prevents nested parallelisation (or set above 1 if you want to melt your CPU)
+  )
+  
+  tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
+  
+  writeRaster(
+    tmp.rao_raster,
+    filename = file.path(
+      kili.rao.dir,
+      paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
+    ),
+    overwrite = TRUE
+  )
+  
+  rm(tmp.tile, tmp.result, tmp.rao_raster)
+  gc()
+  
+  message("Tile ", i, " processed.")
+  
+  NULL # So that each worker doesn't fill up R's memory with bloat upon completion
+})
+
+### Step 3: Demosaic the classical Rao's Q tiles
+## Gather up all the files
+
+kili.rao.files <- list.files(
+  kili.rao.dir,
+  pattern = "Classic-RaoQ",
+  full.names = TRUE
+)
+
+# Tell R to apply the `rast` function to them 
+
+kili.rao.tiles <- lapply(kili.rao.files, rast)
+
+# Convert them into a spatial raster collection:
+
+kili.rao.tiles <- sprc(kili.rao.tiles)
+
+# Run the demosaic function
+
+KiliNP_Classic_RaoQ <- terra::mosaic(kili.rao.tiles)
+
+# Export the final raster
+
+writeRaster(
+  KiliNP_Classic_RaoQ,
+  "Results 📈📉/Kilimanjaro/Kilimanjaro_Classic-RaoQ.tif",
+  overwrite = TRUE
+)
+
+#################################################
 KiliNP_Classic_RaoQ <- paRao(
-  x = KiliNP_Mean_Raster,
+  x = KiliNP_Mean_Raster2dec, # The raster rounded to 2 decimal places for fair comparisons with Shannon's H
   window = 3,
   alpha = 2,
   na.tolerance = 0,
   simplify = 2,
   method = "classic",
-  np = detectCores() -1
+  np = detectCores() -2
 )
 
 writeRaster(
