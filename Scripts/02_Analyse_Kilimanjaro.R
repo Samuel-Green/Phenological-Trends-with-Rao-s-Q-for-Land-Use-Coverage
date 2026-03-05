@@ -264,7 +264,7 @@ kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
 # Create a directory to put the tiles in
 
-kili.tile.dir <- "Processed Data/Kilimanjaro/tiles"
+kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/tiles"
 dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Finally, create the tiles
@@ -289,6 +289,14 @@ dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
 
 kili.cores <- max(1, detectCores() - 2)
 
+# Initialise a log file so I can actually see what's going on
+
+kili.log.file <- file.path(kili.rao.dir, "KiliNP_RaoQ_processing_log.txt")
+
+# If the log file doesn't exist already, create one
+
+if(!file.exists(kili.log.file)) file.create(kili.log.file)
+
 # Create the cluster (alliterative and punny names are mandatory)
 
 kili.cluster <- makeCluster(kili.cores)
@@ -301,43 +309,80 @@ clusterEvalQ(kili.cluster, {
 clusterExport(kili.cluster, c(
   "kili.tiles",
   "kili.rao.dir",
-  "RaoQ.window.size"
+  "RaoQ.window.size",
+  "kili.log.file"
 ))
+
+# Identify tiles still needing processing (so resources aren't wasted processing tiles already done)
+
+tile.outputs <- file.path(
+  kili.rao.dir,
+  paste0("KiliNP_Classic-RaoQ_Tile-", seq_along(kili.tiles), ".tif")
+)
+
+tiles.to.process <- which(!file.exists(tile.outputs))
+
+cat(length(tiles.to.process), "tiles remaining.\n")
 
 ## Now actually run the code
 
-parLapply(kili.cluster, seq_along(kili.tiles), # Function call
-          function(i) {
-  
-  tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
-  
-  tmp.result <- paRao(
-    tmp.tile,
-    window = RaoQ.window.size,
-    alpha = 2,
-    simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
-    method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
-    np = 1 # Explicitly prevents nested parallelisation (or set above 1 if you want to melt your CPU)
-  )
-  
-  tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
-  
-  writeRaster(
-    tmp.rao_raster,
-    filename = file.path(
+kili.classic.rao.results <- parLapply( # Function call
+  kili.cluster,
+  tiles.to.process,
+  function(i){
+    
+    library(terra)
+    library(rasterdiv)
+    
+    log_file <- kili.log.file
+    
+    log_msg <- function(msg){
+      cat(
+        paste0(Sys.time(), " | Worker ", Sys.getpid(), " | ", msg, "\n"),
+        file = log_file,
+        append = TRUE
+      )
+    }
+    
+    out.file <- file.path(
       kili.rao.dir,
       paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
-    ),
-    overwrite = TRUE
-  )
-  
-  rm(tmp.tile, tmp.result, tmp.rao_raster)
-  gc()
-  
-  message("Tile ", i, " processed.")
-  
-  NULL # So that each worker doesn't fill up R's memory with bloat upon completion
-})
+    )
+    
+    if(file.exists(out.file)){
+      log_msg(paste("Tile", i, "already exists — skipped"))
+      return(NULL)
+    }
+    
+    log_msg(paste("Tile", i, "STARTED"))
+    
+    tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
+    
+    tmp.result <- paRao(
+      tmp.tile,
+      window = RaoQ.window.size,
+      alpha = 2,
+      simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
+      method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
+      np = 1 # Explicitly prevents nested parallelisation (or set above 1 if you want to melt your CPU)
+    )
+    
+    tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
+    
+    writeRaster(
+      tmp.rao_raster,
+      filename = out.file,
+      overwrite = TRUE
+    )
+    
+    rm(tmp.tile,tmp.result,tmp.rao_raster)
+    gc()
+    
+    log_msg(paste("Tile №", i, "'s classic Rao's Q calculated successfully."))
+    
+    return(NULL) # So that each worker doesn't fill up R's memory with bloat upon completion
+  }
+)
 
 ### Step 3: Demosaic the classical Rao's Q tiles
 ## Gather up all the files
@@ -365,23 +410,6 @@ KiliNP_Classic_RaoQ <- terra::mosaic(kili.rao.tiles)
 writeRaster(
   KiliNP_Classic_RaoQ,
   "Results 📈📉/Kilimanjaro/Kilimanjaro_Classic-RaoQ.tif",
-  overwrite = TRUE
-)
-
-#################################################
-KiliNP_Classic_RaoQ <- paRao(
-  x = KiliNP_Mean_Raster2dec, # The raster rounded to 2 decimal places for fair comparisons with Shannon's H
-  window = 3,
-  alpha = 2,
-  na.tolerance = 0,
-  simplify = 2,
-  method = "classic",
-  np = detectCores() -2
-)
-
-writeRaster(
-  KiliNP_Classic_RaoQ$window.3$alpha.2,
-  filename = file.path(KiliNP_Results, "KiliNP_RaoQ_Classic_raster.tif"),
   overwrite = TRUE
 )
 
