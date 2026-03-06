@@ -325,6 +325,7 @@ tiles.to.process <- which(!file.exists(tile.outputs))
 cat(length(tiles.to.process), "tiles remaining.\n")
 
 ## Now actually run the code
+# This version creates a process for each CPU core and runs each tile as a single process
 
 kili.classic.rao.results <- parLapply( # Function call
   kili.cluster,
@@ -383,6 +384,60 @@ kili.classic.rao.results <- parLapply( # Function call
     return(NULL) # So that each worker doesn't fill up R's memory with bloat upon completion
   }
 )
+
+# This for loop is an alternative computational approach which uses all cores to work sequentially over each tile
+# This version seems computationally safer because each tile outputted is like a mini-checkpoint in the event that computation is interrupted
+
+for(i in seq_along(kili.tiles)){
+  
+  log_file <- kili.log.file
+  
+  log_msg <- function(msg){
+    cat(
+      paste0(Sys.time(), " | Tile ", i, " | ", msg, "\n"),
+      file = log_file,
+      append = TRUE
+    )
+  }
+  
+  out.file <- file.path(
+    kili.rao.dir,
+    paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
+  )
+  
+  # Skip tiles which already exist (prevents recomputation)
+  
+  if(file.exists(out.file)){
+    log_msg("already exists — skipped")
+    next
+  }
+  
+  log_msg("STARTED")
+  
+  tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
+  
+  tmp.result <- paRao(
+    tmp.tile,
+    window = RaoQ.window.size,
+    alpha = 2,
+    simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
+    method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
+    np = kili.cores # Parallelise INSIDE paRao for faster per-tile processing
+  )
+  
+  tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
+  
+  writeRaster(
+    tmp.rao_raster,
+    filename = out.file,
+    overwrite = TRUE
+  )
+  
+  rm(tmp.tile,tmp.result,tmp.rao_raster)
+  gc()
+  
+  log_msg("classic Rao's Q calculated successfully.")
+}
 
 ### Step 3: Demosaic the classical Rao's Q tiles
 ## Gather up all the files
