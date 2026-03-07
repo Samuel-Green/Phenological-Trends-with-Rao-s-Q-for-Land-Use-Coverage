@@ -264,7 +264,7 @@ kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
 # Create a directory to put the tiles in
 
-kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/tiles"
+kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Mean NDVI tiles"
 dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Finally, create the tiles
@@ -385,7 +385,7 @@ kili.classic.rao.results <- parLapply( # Function call
   }
 )
 
-# This for loop is an alternative computational approach which uses all cores to work sequentially over each tile
+## This for loop is an alternative computational approach which uses all cores to work sequentially over each tile
 # This version seems computationally safer because each tile outputted is like a mini-checkpoint in the event that computation is interrupted
 
 for(i in seq_along(kili.tiles)){
@@ -472,6 +472,30 @@ writeRaster(
 
 message("Calculating Rao's Q with TWDTW distance for Kilimanjaro...")
 
+## Step 1: I'll have to tile this as well because it is too large to compute as a single object
+# This tiling script is copied from Step 1 of the classical Rao's Q analysis
+# Some objects like "kili.tiling.grid" are assumed to be loaded, and "kili.tile.dir" is overwritten
+
+# Create a directory to put the tiles in
+
+kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles"
+dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
+
+# Create the timeseries tiles
+
+kili.twdtw.tiles <- makeTiles(
+  trim(KiliNP_Timeseries_Clean), # Trimmed for easier computation
+  y = kili.tiling.grid, # Specifies how the tiles should be allocated
+  buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
+  filename = file.path(kili.tile.dir, "KiliNP_2017-2021_NDVI_Tile-.tif"),
+  overwrite = TRUE
+)
+
+## Step 2: Submit the tiles for processing on University of Marburg's supercomputer
+# Please see script XXXXX for the actual job scripts used
+# If you wish to attempt computation on your local machine, then please see the code below
+
+######### Beginning of not actually used section
 Kili_Rao_TWDTW <- paRao(
   x = KiliNP_Timeseries_Clean,
   time_vector = Kili.dates,
@@ -494,6 +518,7 @@ writeRaster(
   filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
   overwrite = TRUE
 )
+######### End of not actually used section
 
 ### Export rasters for comparison ####
 
