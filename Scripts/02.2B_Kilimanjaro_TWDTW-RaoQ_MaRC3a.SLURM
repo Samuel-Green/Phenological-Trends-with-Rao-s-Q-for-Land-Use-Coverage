@@ -9,6 +9,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
 
-module load R
+module purge
+module load R/4.1.2
 
 Rscript 02.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a.R

@@ -1,5 +1,5 @@
 ###############################################################################
-# run_kili_twdtw_tile.R
+# 02.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a
 # Processes ONE tile for TWDTW Rao's Q
 ###############################################################################
 
@@ -15,8 +15,8 @@ cat("Starting tile:", tile_id, "\n")
 
 # directories
 
-tile_dir <- "Data/Processed Data/Kilimanjaro/tiles"
-out_dir  <- "Data/Processed Data/Kilimanjaro/tiles/twdtw_outputs"
+tile_dir <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles"
+out_dir  <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles/TWDTW Rao-utputs"
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -24,6 +24,10 @@ tile_file <- file.path(
   tile_dir,
   paste0("KiliNP_2017-2021_NDVI_Tile-", tile_id, ".tif")
 )
+
+if(!file.exists(tile_file)){
+  stop(paste("Tile file missing:", tile_file))
+}
 
 out_file <- file.path(
   out_dir,
