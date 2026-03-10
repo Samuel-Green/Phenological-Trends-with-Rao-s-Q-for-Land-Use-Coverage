@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=kili_twdtw
-#SBATCH --output=logs/kili_%A_%a.out
-#SBATCH --error=logs/kili_%A_%a.err
+#SBATCH --job-name=kili_rao
+#SBATCH --output=logs/kili_rao_%A_%a.out
+#SBATCH --error=logs/kili_rao_%A_%a.err
 
 #SBATCH --array=1-72
 
@@ -15,4 +15,4 @@ module load R/4.1.2
 
 cd "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Scripts"
 
-Rscript 02.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a.R
+Rscript 02.1A_Kilimanjaro_Classical-RaoQ_MaRC3a.R
