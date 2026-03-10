@@ -217,11 +217,14 @@ message("Calculating classical Rao's Q for Kilimanjaro...")
 trimmed.KiliNP_Mean_Raster <- trim(KiliNP_Mean_Raster)
 
 # We want approximately 72 tiles (not too many, not too few)
+# Actually, I think this is far too many, having spent the last days trying to compute them all
+# For effective parallelisation on MaRC3a, I actually think 2000 tiny tiles would be more effective
 
-kili.total.tiles <- 72
+#kili.total.tiles <- 72
+kili.total.tiles <- 2000
 kili.aspect.ratio <- ncol(trimmed.KiliNP_Mean_Raster) / nrow(trimmed.KiliNP_Mean_Raster)
 
-# find factor pairs of 72
+# find factor pairs of 72 
 
 tiling.factors <- expand.grid(
   ncols = 1:kili.total.tiles,
@@ -264,7 +267,8 @@ kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
 # Create a directory to put the tiles in
 
-kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Mean NDVI tiles"
+#kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Mean NDVI tiles" # I disabled this line so I don't overwrite my 72 larger tiles
+kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Tiny tiles"
 dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Finally, create the tiles
