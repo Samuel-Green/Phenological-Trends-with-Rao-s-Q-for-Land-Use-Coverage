@@ -608,7 +608,7 @@ KiliNP_LandCover_Vector <-
 # Ensure CRS matches
 
 if (crs(KiliNP_Comparison_Rasters) != crs(KiliNP_LandCover_Vector)){
-  KiliNP_LandCover_Vector <- project(KiliNP_LandCover_Vector, crs(KiliNP_ShannonH_Raster))
+  KiliNP_LandCover_Vector <- project(KiliNP_LandCover_Vector, crs(KiliNP_Comparison_Rasters))
 }
 
 # Crop and mask diversity rasters to ground truth extent
@@ -656,7 +656,7 @@ KiliNP_LandCover_Raster <- rasterize(
   field = "grid_code"
 )
 
-### Convert to dataframe for PERMANOVA ####
+### Convert the index rasters to a dataframe for performance analysis ####
 
 KiliNP_Indices_Comparison_Raster <- c(
   masked.KiliNP_ShannonH_Raster,
@@ -685,21 +685,30 @@ colnames(KiliNP_Indices_Comparison_DF) <- c(
 )
 
 ### PERMANOVA ####
+## These datasets are too large to conduct a PERMANOVA upon (37121.9GB RAM required)
+## Instead, I will use a random representative subset of the data
+# Subset the data
+
+subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[sample(nrow(KiliNP_Indices_Comparison_DF), 10000), ]
+
+# Conduct a series of PERMANOVAs
 
 PERMANOVA_ShannonsH <- adonis2(
-  KiliNP_Indices_Comparison_DF$ShannonsH ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 9999
+  subset.KiliNP_Indices_Comparison_DF$ShannonsH ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999
 )
 
 PERMANOVA_RaosQ_Classic <- adonis2(
-  KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 9999
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999
 )
 
 PERMANOVA_RaosQ_TWDTW <- adonis2(
-  KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 9999
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999
 )
+
+# Put the PERMANOVA results into a dataframe for effective presentation
 
 KiliNP_PERMANOVA_Results <- data.frame(
   Index = c("Shannon H", "Classic Rao Q", "TWDTW Rao Q"),
