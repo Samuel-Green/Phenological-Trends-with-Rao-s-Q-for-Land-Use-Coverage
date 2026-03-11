@@ -146,7 +146,6 @@ stopifnot(length(Kili.dates) == nlyr(KiliNP_Timeseries_Clean))
 message(paste("Temporal length:", length(Kili.dates), "layers"))
 
 ### 1. Shannon-Wiener Index ####
-
 ## As in Macchia Sacra, collapse the time series to mean annual trajectory first
 
 message("Calculating Shannon-Wiener diversity index for Kilimanjaro...")
@@ -333,6 +332,8 @@ cat(length(tiles.to.process), "tiles remaining.\n")
 
 ## Now actually run the code
 # This version creates a process for each CPU core and runs each tile as a single process
+## REVIEWERS: Due to the CPU overhead of this workload, I ultimately decided to run it on my university's supercomputer instead
+# Please see "02.1C_Kilimanjaro_Classical-RaoQ_MaRC3a.R" for the job file I submitted
 
 kili.classic.rao.results <- parLapply( # Function call
   kili.cluster,
@@ -503,7 +504,7 @@ kili.twdtw.tiles <- makeTiles(
 )
 
 ## Step 2: Submit the tiles for processing on University of Marburg's supercomputer
-# Please see script XXXXX for the actual job scripts used
+# Please see script 02.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a.R for the actual job scripts used
 # If you wish to attempt computation on your local machine, then please see the code below
 
 ######### Beginning of not actually used section
@@ -695,17 +696,20 @@ subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[sample(nrow(
 
 PERMANOVA_ShannonsH <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$ShannonsH ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999
+  permutations = 999,
+  parallel = kili.cores # I've set it to parallelise using the kili.cores argument from before
 )
 
 PERMANOVA_RaosQ_Classic <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999
+  permutations = 999,
+  parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_TWDTW <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999
+  permutations = 999,
+  parallel = kili.cores
 )
 
 # Put the PERMANOVA results into a dataframe for effective presentation
