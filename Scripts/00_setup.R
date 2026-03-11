@@ -5,6 +5,7 @@
 
 ### Libraries ####
 ## Install packages
+
 install.packages("terra")
 install.packages("sf")
 install.packages("here")
@@ -20,6 +21,7 @@ install.packages("parallel")
 install.packages("pROC")
 
 ## Load libraries
+
 library(terra)
 library(sf)
 library(here)
@@ -33,15 +35,18 @@ library(parallel)
 library(pROC)
 
 ### Reproducibility settings ####
+
 options(scipen = 999)
 set.seed(123)
 
 ### Path definitions ####
+
 InputData <- here::here("Data 🔢/Input Data")
 ProcessedData <- here::here("Data 🔢/Processed Data")
 Results <- here::here("Results 📈📉")
 
 ### Site-specific paths ####
+
 Macchia_Input <- file.path(InputData, "Macchia Sacra")
 Knepp_Input <- file.path(InputData, "Knepp Estate")
 KiliNP_Input <- file.path(InputData, "Kilimanjaro")

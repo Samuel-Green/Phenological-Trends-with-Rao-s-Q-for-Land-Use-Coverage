@@ -122,7 +122,7 @@ writeRaster(KiliNP_Timeseries_Clean, file.path(KiliNP_Processed, "KiliNP_2017-20
 
 # And then load back in the raster
 
-KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"))
+KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif")) # Load it in
 
 ### Inspect temporal structure ####
 
@@ -163,16 +163,17 @@ writeRaster(KiliNP_Mean_Raster, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cro
 
 # And then load back in the raster
 
-KiliNP_Mean_Raster <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif"))
+KiliNP_Mean_Raster <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif")) # Load it in
 
 # Round to 2 decimals to avoid numerical saturation
 
 KiliNP_Mean_Raster2dec <- round(KiliNP_Mean_Raster, 2)
+KiliNP_Mean_Raster2dec <- trim(KiliNP_Mean_Raster2dec) # Trimming it to avoid unnecessary computation
 
 # Export and reload the rounded raster so I don't have to calculate it every time
 
 writeRaster(KiliNP_Mean_Raster2dec, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif"), overwrite = TRUE)
-KiliNP_Mean_Raster2dec <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif"))
+KiliNP_Mean_Raster2dec <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif")) # Load it back in
 
 # Run ShannonS
 
@@ -202,7 +203,7 @@ writeRaster(
   overwrite = TRUE
 )
 
-KiliNP_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif"))
+KiliNP_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif")) # Load it back in
 
 ### 2. Classic Rao's Q  ####
 ## Due to the large size of the raster, I need to tile it so that it can be run
@@ -260,6 +261,12 @@ kili.tiling.grid <- as.polygons(
   )
 )
 
+writeVector(kili.tiling.grid, file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON"), filetype = "GeoJSON" , overwrite = TRUE) # Export for later use
+
+kili.tiling.grid <- vect(file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON")) # Load it back in
+
+plot(kili.tiling.grid) # Plot it to make sure that it's loaded in
+
 # Window size (I think 3 is the default, but this can be changed as necessary)
 
 RaoQ.window.size <- 3
@@ -267,8 +274,8 @@ kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
 # Create a directory to put the tiles in
 
-#kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Mean NDVI tiles" # I disabled this line so I don't overwrite my 72 larger tiles
-kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Tiny tiles"
+#kili.tile.dir <- file.path(KiliNP_Processed,"Mean NDVI tiles") # I disabled this line so I don't overwrite my 72 larger tiles
+kili.tile.dir <- file.path(KiliNP_Processed,"Tiny tiles")
 dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Finally, create the tiles
@@ -355,7 +362,7 @@ kili.classic.rao.results <- parLapply( # Function call
     )
     
     if(file.exists(out.file)){
-      log_msg(paste("Tile", i, "already exists — skipped"))
+      log_msg(paste0("Tile", i, "already exists — skipped"))
       return(NULL)
     }
     
@@ -460,17 +467,21 @@ kili.rao.tiles <- lapply(kili.rao.files, rast)
 
 kili.rao.tiles <- sprc(kili.rao.tiles)
 
-# Run the demosaic function
+# Run the demosaic function (which is curiously called `mosaic`)
 
 KiliNP_Classic_RaoQ <- terra::mosaic(kili.rao.tiles)
 
-# Export the final raster
+# Export the final raster, and load it back in if necessary
 
 writeRaster(
   KiliNP_Classic_RaoQ,
-  "Results 📈📉/Kilimanjaro/Kilimanjaro_Classic-RaoQ.tif",
+  file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ.tif"),
   overwrite = TRUE
 )
+
+KiliNP_Classic_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ.tif")) # Load in the raster
+
+plot(KiliNP_Classic_RaoQ) # Plot it! (Good for data exploration and checking that the raster loaded in as normal)
 
 ### 3. Rao's Q with TWDTW ####
 
@@ -482,14 +493,14 @@ message("Calculating Rao's Q with TWDTW distance for Kilimanjaro...")
 
 # Create a directory to put the tiles in
 
-kili.tile.dir <- "Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles"
-dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
+kili.twdtw.rao.dir <- file.path(KiliNP_Processed,"Timeseries NDVI tiles")
+dir.create(kili.twdtw.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 # Create the timeseries tiles
 
 kili.twdtw.tiles <- makeTiles(
   trim(KiliNP_Timeseries_Clean), # Trimmed for easier computation
-  y = kili.tiling.grid, # Specifies how the tiles should be allocated
+  y = kili.tiling.grid, # Make sure this is still loaded in from the previous step!
   buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
   filename = file.path(kili.tile.dir, "KiliNP_2017-2021_NDVI_Tile-.tif"),
   overwrite = TRUE
@@ -500,58 +511,91 @@ kili.twdtw.tiles <- makeTiles(
 # If you wish to attempt computation on your local machine, then please see the code below
 
 ######### Beginning of not actually used section
-Kili_Rao_TWDTW <- paRao(
-  x = KiliNP_Timeseries_Clean,
-  time_vector = Kili.dates,
-  window = 3,
-  alpha = 2,
-  na.tolerance = 0,
-  simplify = 2,
-  np = detectCores() -1,
-  progBar = TRUE,
-  method = "multidimension",
-  dist_m = "twdtw",
-  midpoint = 6,          # Midpoint of annual cycle (June)
-  stepness = -0.5,
-  cycle_length = "year",
-  time_scale = "month"   # Now explicitly monthly data
+# Kili_Rao_TWDTW <- paRao(
+#   x = KiliNP_Timeseries_Clean,
+#   time_vector = Kili.dates,
+#   window = 3,
+#   alpha = 2,
+#   na.tolerance = 0,
+#   simplify = 2,
+#   np = detectCores() -1,
+#   progBar = TRUE,
+#   method = "multidimension",
+#   dist_m = "twdtw",
+#   midpoint = 6,          # Midpoint of annual cycle (June)
+#   stepness = -0.5,
+#   cycle_length = "year",
+#   time_scale = "month"   # Now explicitly monthly data
+# )
+# 
+# writeRaster(
+#   Kili_Rao_TWDTW$window.3$alpha.2,
+#   filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
+#   overwrite = TRUE
+# )
+######### End of not actually used section
+
+## Step 3: Demosaic the raster tiles to create a final TWDTW Rao's Q raster
+## Gather up all the files
+
+kili.twdtw.rao.files <- list.files(
+  file.path(kili.twdtw.rao.dir, "TWDTW Rao-utputs"),
+  pattern = "KiliNP_2017-2021_TWDTW-RaoQ_Tile-",
+  full.names = TRUE
 )
 
+# Tell R to apply the `rast` function to them 
+
+kili.twdtw.rao.files <- lapply(kili.twdtw.rao.files, rast)
+
+# Convert them into a spatial raster collection:
+
+kili.twdtw.rao.files <- sprc(kili.twdtw.rao.files)
+
+# Run the demosaic function (which is curiously called `mosaic`)
+
+KiliNP_TWDTW_RaoQ <- terra::mosaic(kili.twdtw.rao.files)
+
+# Export the final raster, and load it back in if necessary
+
 writeRaster(
-  Kili_Rao_TWDTW$window.3$alpha.2,
-  filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
+  KiliNP_TWDTW_RaoQ,
+  file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ.tif"),
   overwrite = TRUE
 )
-######### End of not actually used section
+
+KiliNP_TWDTW_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ.tif")) # Load in the raster
+
+plot(KiliNP_TWDTW_RaoQ)
 
 ### Export rasters for comparison ####
 
-Kili_Comparison_Rasters <- c(
-  KiliNP_Timeseries_Clean[[nlyr(KiliNP_Timeseries_Clean)]],
+KiliNP_Comparison_Rasters <- c(
+  trim(KiliNP_Mean_Raster), # Trimmed so that it matches the extent of the other rasters
   KiliNP_ShannonH_Raster,
-  KiliNP_Classic_RaoQ$window.3$alpha.2,
-  Kili_Rao_TWDTW$window.3$alpha.2
+  KiliNP_Classic_RaoQ,
+  KiliNP_TWDTW_RaoQ
 )
 
-names(Kili_Comparison_Rasters) <- c(
+names(KiliNP_Comparison_Rasters) <- c( # This sets nice layer names for easier browsing
   "Sentinel-2 NDVI",
   "Shannon's H",
   "Classic Rao's Q",
   "TWDTW Rao's Q"
 )
 
-writeRaster(
-  Kili_Comparison_Rasters,
+writeRaster( # So I don't have to compute it every time
+  KiliNP_Comparison_Rasters,
   filename = file.path(KiliNP_Results, "KiliNP_Diversity_Comparison.tif"),
   overwrite = TRUE
 )
 
-png(file.path(KiliNP_Results, "KiliNP_Indices_Comparison.png"),
+png(file.path(KiliNP_Results, "KiliNP_Indices_Comparison.png"), # Exported for the paper
     width = 2560, height = 1440, res = 150)
 
-plot(Kili_Comparison_Rasters)
-
 dev.off()
+
+plot(KiliNP_Comparison_Rasters) # Plot it to see how it looks
 
 ### Assess index performance using vegetation ground truth ####
 
@@ -565,48 +609,72 @@ if (crs(KiliNP_ShannonH_Raster) != crs(KiliNP_LandCover_Vector)){
 
 # Crop and mask diversity rasters to ground truth extent
 
+masked.KiliNP_ShannonH_Raster <- mask(crop(KiliNP_ShannonH_Raster, KiliNP_LandCover_Vector), # Crop
+                                      KiliNP_LandCover_Vector) # and mask
+masked.KiliNP_Classic_RaoQ <- mask(crop(KiliNP_Classic_RaoQ, KiliNP_LandCover_Vector), 
+                                   KiliNP_LandCover_Vector)
+masked.KiliNP_TWDTW_RaoQ <- mask(crop(KiliNP_TWDTW_RaoQ, KiliNP_LandCover_Vector), 
+                                 KiliNP_LandCover_Vector)
 
-Kili_Shannon_crop     <- crop(KiliNP_ShannonH_Raster, KiliNP_LandCover_Vector)
-KiliNP_Classic_RaoQ_crop <- crop(KiliNP_Classic_RaoQ$window.3$alpha.2, KiliNP_LandCover_Vector)
-Kili_Rao_TWDTW_crop   <- crop(Kili_Rao_TWDTW$window.3$alpha.2, KiliNP_LandCover_Vector)
+## Rasterise vegetation class
+# First I need to update the ground truth vector to use the proper category names
+# I'll use a lookup table
 
-Kili_Shannon_masked     <- mask(Kili_Shannon_crop, KiliNP_LandCover_Vector)
-KiliNP_Classic_RaoQ_Masked <- mask(KiliNP_Classic_RaoQ_crop, KiliNP_LandCover_Vector)
-Kili_Rao_TWDTW_masked   <- mask(Kili_Rao_TWDTW_crop, KiliNP_LandCover_Vector)
+kili.land.cover.lookup <- c(
+  "0"  = "Snow/glacier",
+  "1"  = "Agriculture (MAI)",
+  "2"  = "Savannah (SAV)",
+  "3"  = "Swamp",
+  "4"  = "Overgrown clearing",
+  "7"  = "Forest plantation",
+  "9"  = "Riverine",
+  "10" = "Upper montane Erica excelsa forest (FPO Podocarpus disturbed)",
+  "11" = "Subalpine Erica trimera bushland (FED incl FER)",
+  "12" = "FPO",
+  "13" = "Subalpine tussock grassland",
+  "14" = "HOM",
+  "15" = "HEL",
+  "16" = "FOC",
+  "17" = "Bare rock",
+  "18" = "FLM",
+  "19" = "COF"
+)
 
-# Rasterise vegetation class
+# Assign readable names to the grid code vector of the ground truth
 
-KiliNP_LandCover_Vector$CAT <- KiliNP_LandCover_Vector$decsr
+KiliNP_LandCover_Vector$grid_code <- kili.land.cover.lookup[as.character(KiliNP_LandCover_Vector$grid_code)]
+
+# Rasterise the land cover vector
 
 KiliNP_LandCover_Raster <- rasterize(
   KiliNP_LandCover_Vector,
-  Kili_Shannon_masked,
-  field = "CAT"
+  KiliNP_Comparison_Rasters,
+  field = "grid_code"
 )
 
 ### Convert to dataframe for PERMANOVA ####
 
-Kili_Indices_Comparison_Raster <- c(
-  Kili_Shannon_masked,
-  KiliNP_Classic_RaoQ_Masked,
-  Kili_Rao_TWDTW_masked,
+KiliNP_Indices_Comparison_Raster <- c(
+  masked.KiliNP_ShannonH_Raster,
+  masked.KiliNP_Classic_RaoQ,
+  masked.KiliNP_TWDTW_RaoQ,
   KiliNP_LandCover_Raster
 )
 
-names(Kili_Indices_Comparison_Raster) <- c(
-  "ShannonH",
+names(KiliNP_Indices_Comparison_Raster) <- c(
+  "ShannonsH",
   "RaosQ_Classic",
   "RaosQ_TWDTW",
   "Veg_GroundTruth"
 )
 
-Kili_Indices_Comparison_DF <- as.data.frame(
-  Kili_Indices_Comparison_Raster,
+KiliNP_Indices_Comparison_DF <- as.data.frame(
+  KiliNP_Indices_Comparison_Raster,
   na.rm = TRUE
 )
 
-colnames(Kili_Indices_Comparison_DF) <- c(
-  "ShannonH",
+colnames(KiliNP_Indices_Comparison_DF) <- c(
+  "ShannonsH",
   "RaosQ_Classic",
   "RaosQ_TWDTW",
   "Veg_GroundTruth"
@@ -614,43 +682,40 @@ colnames(Kili_Indices_Comparison_DF) <- c(
 
 ### PERMANOVA ####
 
-PERMANOVA_Shannon <- adonis2(
-  ShannonH ~ Veg_GroundTruth,
-  data = Kili_Indices_Comparison_DF,
+PERMANOVA_ShannonsH <- adonis2(
+  KiliNP_Indices_Comparison_DF$ShannonsH ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
 PERMANOVA_RaosQ_Classic <- adonis2(
-  RaosQ_Classic ~ Veg_GroundTruth,
-  data = Kili_Indices_Comparison_DF,
+  KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
 PERMANOVA_RaosQ_TWDTW <- adonis2(
-  RaosQ_TWDTW ~ Veg_GroundTruth,
-  data = Kili_Indices_Comparison_DF,
+  KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
-Kili_PERMANOVA_Results <- data.frame(
-  Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
+KiliNP_PERMANOVA_Results <- data.frame(
+  Index = c("Shannon H", "Classic Rao Q", "TWDTW Rao Q"),
   R2 = c(
-    PERMANOVA_Shannon$R2[1],
+    PERMANOVA_ShannonsH$R2[1],
     PERMANOVA_RaosQ_Classic$R2[1],
     PERMANOVA_RaosQ_TWDTW$R2[1]
   ),
   F = c(
-    PERMANOVA_Shannon$F[1],
+    PERMANOVA_ShannonsH$F[1],
     PERMANOVA_RaosQ_Classic$F[1],
     PERMANOVA_RaosQ_TWDTW$F[1]
   ),
   p_value = c(
-    PERMANOVA_Shannon$`Pr(>F)`[1],
+    PERMANOVA_ShannonsH$`Pr(>F)`[1],
     PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
     PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
   )
 )
 
-print(Kili_PERMANOVA_Results)
+print(KiliNP_PERMANOVA_Results)
 
 message("Kilimanjaro analysis complete.")
