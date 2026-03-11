@@ -25,10 +25,6 @@ library(terra)
 KiliNP_Results <- file.path(Results, "Kilimanjaro")
 dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 
-# Load KiliNP_LandCover_Vector boundary
-
-KiliNP_LandCover_Vector <- vect(paste0(KiliNP_Input,"/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp"))
-
 # List raster files
 # Only run these lines if I haven't already generated my cropped raster files (it takes forever)
 
@@ -590,6 +586,8 @@ writeRaster( # So I don't have to compute it every time
   overwrite = TRUE
 )
 
+KiliNP_Comparison_Rasters <- rast(file.path(KiliNP_Results, "KiliNP_Diversity_Comparison.tif")) # Load it back in
+
 png(file.path(KiliNP_Results, "KiliNP_Indices_Comparison.png"), # Exported for the paper
     width = 2560, height = 1440, res = 150)
 
@@ -601,9 +599,15 @@ plot(KiliNP_Comparison_Rasters) # Plot it to see how it looks
 
 message("Assessing diversity indices against vegetation ground truth...")
 
+# Load KiliNP_LandCover_Vector boundary (this is our land cover ground truth data)
+
+KiliNP_LandCover_Vector <- 
+  vect(file.path(KiliNP_Input,
+                 "/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp")) # Load in the ground truth data
+
 # Ensure CRS matches
 
-if (crs(KiliNP_ShannonH_Raster) != crs(KiliNP_LandCover_Vector)){
+if (crs(KiliNP_Comparison_Rasters) != crs(KiliNP_LandCover_Vector)){
   KiliNP_LandCover_Vector <- project(KiliNP_LandCover_Vector, crs(KiliNP_ShannonH_Raster))
 }
 
