@@ -1,6 +1,6 @@
 ############################################################################ ###
 # Elliot Samuel Shayle - University of Marburg - 24/11/2025                    #
-# 01_Analyse_Macchia_Sacra.R                                                   #
+# 01_Analyse_Macchia_Sacra_PPI.R                                               #
 # Reproducing Macchia Sacra analysis (from Hackathon Preprint) using rasterdiv #
 ############################################################################ ###
 
@@ -20,8 +20,7 @@ library(pROC)
 
 # Input NetCDF files provided by collaborators
 
-PPI_file  <- file.path(Macchia_Input, "ppiMSExp.nc")
-NDVI_file <- file.path(Macchia_Input, "ndviMSExp.nc")
+MS_PPI_File  <- file.path(Macchia_Input, "ppiMSExp.nc")
 
 # Output directory for this script
 
@@ -32,15 +31,13 @@ dir.create(Macchia_Results, showWarnings = FALSE, recursive = TRUE)
 # These NetCDFs are expected to be SpatRaster objects 
 # Time encoded along the layer (Z) dimension, with 1 layer per acquisition date
 
-message("Reading PPI and NDVI NetCDF files...")
+message("Reading PPI NetCDF files...")
 
-PPI_ts  <- rast(PPI_file)
-NDVI_ts <- rast(NDVI_file)
+MS_PPI_Timeseries  <- rast(MS_PPI_File)
 
 # Basic sanity checks
 
-stopifnot(inherits(PPI_ts, "SpatRaster"))
-stopifnot(inherits(NDVI_ts, "SpatRaster"))
+stopifnot(inherits(MS_PPI_Timeseries, "SpatRaster"))
 
 ### Inspect temporal structure ####
 ## rasterdiv::paRao() requires an explicit time_vector
@@ -48,30 +45,30 @@ stopifnot(inherits(NDVI_ts, "SpatRaster"))
 
 # Attempt to extract time directly from NetCDF metadata
 
-PPI_time <- time(PPI_ts)
+MS_Time <- time(MS_PPI_Timeseries)
 
-if (is.null(PPI_time)) {
+if (is.null(MS_Time)) {
   stop("No temporal metadata found in PPI NetCDF. Time vector must be supplied manually.")
-} # Checks that time data is in the object "PPI_time"
+} # Checks that time data is in the object "MS_Time"
 
 # Convert to Date class if needed
 
-PPI_time <- as.Date(PPI_time)
+MS_Time <- as.Date(MS_Time)
 
 # Confirm dimensional agreement
 
-stopifnot(length(PPI_time) == nlyr(PPI_ts))
+stopifnot(length(MS_Time) == nlyr(MS_PPI_Timeseries))
 
-message(paste("Temporal length:", length(PPI_time), "layers"))
+message(paste("Temporal length:", length(MS_Time), "layers"))
 
 # Calculate the mean seasonal trajectory across the site
 
-PPI_mean_ts <- global(PPI_ts[[1:146]], fun = "mean", na.rm = TRUE) # I've subsetted PPI_ts to just the first 146 layers as the subsequent 146 layers are SD instead.
+MS_Mean_PPI_Timeseries <- global(MS_PPI_Timeseries[[1:146]], fun = "mean", na.rm = TRUE) # I've subsetted MS_PPI_Timeseries to just the first 146 layers as the subsequent 146 layers are SD instead.
 
-png(file.path(Macchia_Results, "PPI_mean_timeseries.png"), # Specifies that I want a 4K resolution .png file
+png(file.path(Macchia_Results, "Macchia_Sacra_PPI_Mean_Timeseries.png"), # Specifies that I want a 4K resolution .png file
     width = 3840, height = 2160, res = 150)
 
-plot(PPI_time[1:146], PPI_mean_ts[,1],
+plot(MS_Time[1:146], MS_Mean_PPI_Timeseries[,1],
      type = "l",
      lwd = 2,
      xlab = "Date",
@@ -87,16 +84,16 @@ dev.off() # This actually exports the plot to the file
 
 message("Calculating Shannon-Wiener diversity index...")
 
-PPI_mean_raster <- app(PPI_ts[[1:146]], fun = mean, na.rm = TRUE) # Subset to just the layers with observations (not standard deviations)
+MS_PPI_Mean_Raster <- app(MS_PPI_Timeseries[[1:146]], fun = mean, na.rm = TRUE) # Subset to just the layers with observations (not standard deviations)
 
 # Round to 2 decimals to avoid numerical saturation
 
-PPI_mean_raster2dec <- round(PPI_mean_raster, 2)
+MS_PPI_Mean_Raster2dec <- round(MS_PPI_Mean_Raster, 2)
 
 # Calculate Shannon with moving window = 3
 
-ShannonH.matrix <- rasterdiv::ShannonS(
-  x = terra::as.matrix(PPI_mean_raster2dec, wide = TRUE),
+MS.PPI.ShannonH.matrix <- rasterdiv::ShannonS(
+  x = terra::as.matrix(MS_PPI_Mean_Raster2dec, wide = TRUE),
   window = 3,
   na.tolerance = 0
 )
@@ -104,20 +101,20 @@ ShannonH.matrix <- rasterdiv::ShannonS(
 ## Now turn the matrix of Shannon H values into a spatial raster
 # Put it in a raster signature
 
-ShannonH_Raster <- rast(ShannonH.matrix)
+MS_PPI_ShannonH_Raster <- rast(MS.PPI.ShannonH.matrix)
 
 # Make the raster's extent and CRS match the original raster
 
-ext(ShannonH_Raster) <- ext(PPI_mean_raster2dec)
-crs(ShannonH_Raster) <- crs(PPI_mean_raster2dec)
+ext(MS_PPI_ShannonH_Raster) <- ext(MS_PPI_Mean_Raster2dec)
+crs(MS_PPI_ShannonH_Raster) <- crs(MS_PPI_Mean_Raster2dec)
 
-names(ShannonH_Raster) <- "Shannon's H"
+names(MS_PPI_ShannonH_Raster) <- "Shannon's H (Derived from PPI)"
 
 # Export the raster
 
 writeRaster(
-  ShannonH_Raster,
-  filename = file.path(Macchia_Results, "Macchia_Sacra_ShannonH_raster.tif"),
+  MS_PPI_ShannonH_Raster,
+  filename = file.path(Macchia_Results, "Macchia_Sacra_PPI_ShannonH_Raster.tif"),
   overwrite = TRUE
 )
 
@@ -129,8 +126,8 @@ message("Calculating classical Rao's Q...")
 # This version calculates "classic" Rao's Q on only one matrix
 # The subsequent multidimensional paRao will be used to calculate TWDTW Rao's Q
 
-Rao_classic <- paRao(
-  x = PPI_mean_raster, # This also uses the mean of PPI throughout time (i.e., all 146 observations are averaged into 1)
+MS_PPI_Classic_RaoQ <- paRao(
+  x = MS_PPI_Mean_Raster, # This also uses the mean of PPI throughout time (i.e., all 146 observations are averaged into 1)
   window = 3,
   alpha = 2,
   na.tolerance = 0,
@@ -141,8 +138,8 @@ Rao_classic <- paRao(
 # This function exports my object as a GeoTIF for viewing in QGIS etc.
 
 writeRaster(
-  Rao_classic$window.3$alpha.2, # Subsets to just the spatial raster (as far as I can tell)
-  filename = file.path(Macchia_Results, "Macchia_Sacra_RaoQ_Classic_raster.tif"),
+  MS_PPI_Classic_RaoQ$window.3$alpha.2, # Subsets to just the spatial raster (as far as I can tell)
+  filename = file.path(Macchia_Results, "Macchia_Sacra_PPI_Classic-RaoQ_Raster.tif"),
   overwrite = TRUE
 )
 
@@ -156,9 +153,9 @@ message("Calculating Rao's Q with TWDTW distance...")
 # And set the "np" argument to detectCores() - 1
 # Also requires the package 'snow' to parallelise, so I've disabled it for now
 
-Rao_TWDTW <- paRao(
-  x = PPI_ts[[1:146]],
-  time_vector = PPI_time[1:146],
+MS_PPI_TWDTW_RaoQ <- paRao(
+  x = MS_PPI_Timeseries[[1:146]],
+  time_vector = MS_Time[1:146],
   window = 3,
   alpha = 2,
   na.tolerance = 0,
@@ -176,75 +173,75 @@ Rao_TWDTW <- paRao(
 # This function exports my object as a GeoTIF for viewing in QGIS etc.
 
 writeRaster(
-  Rao_TWDTW$window.3$alpha.2,
-  filename = file.path(Macchia_Results, "RaoQ_TWDTW_PPI.tif"),
+  MS_PPI_TWDTW_RaoQ$window.3$alpha.2,
+  filename = file.path(Macchia_Results, "Macchia_Sacra_PPI_TWDTW-RaoQ_Raster.tif"),
   overwrite = TRUE
 )
 
 ### Export rasters for comparison as a stacked GeoTIF ####
 ## Stack outputs for easy visual comparison (as in Figure 3 of the Hackathon preprint)
-
 # Combine all my rasters into one list object
 
-MacchiaSacra_Comparison_Rasters <- c(
-  PPI_ts[[146]], # The last PPI image for straightforward visual analysis
-  NDVI_ts[[146]], # The last NDVI image because everyone wants to see NDVI
-  ShannonH_raster,
-  Rao_classic$window.3$alpha.2,
-  Rao_TWDTW$window.3$alpha.2
+MS_PPI_Index_Comparison_Rasters <- c(
+  MS_PPI_Mean_Raster, # The mean of per pixel PPI for straightforward visual analysis
+  MS_PPI_ShannonH_Raster,
+  MS_PPI_Classic_RaoQ$window.3$alpha.2,
+  MS_PPI_TWDTW_RaoQ$window.3$alpha.2
+) # This previously contained the NDVI raster, but I've decided to recompute in a separate file
+
+# Name each layer
+
+names(MS_PPI_Index_Comparison_Rasters) <- c(
+  "Sentinel-2 Mean PPI",
+  "Shannon's H (PPI Derived)",
+  "Classic Rao's Q (PPI Derived)",
+  "TWDTW Rao's Q (PPI Derived)"
 )
 
-names(MacchiaSacra_Comparison_Rasters) <- c(
-  "Sentinel-2 PPI",
-  "Sentinel-2 NDVI",
-  "Shannon's H",
-  "Classic Rao's Q",
-  "TWDTW Rao's Q"
-)
+# Export it for later viewing and observation in QGIS
 
 writeRaster(
-  MacchiaSacra_Comparison_Rasters,
-  filename = file.path(Macchia_Results, "Macchia_Sacra_Diversity_Comparison.tif"),
+  MS_PPI_Index_Comparison_Rasters,
+  filename = file.path(Macchia_Results, "Macchia_Sacra_PPI_Diversity_Comparison.tif"),
   overwrite = TRUE
 )
 
-png(file.path(Macchia_Results, "Macchia_Sacra_Indices_Comparison.png"),
+png(file.path(Macchia_Results, "Macchia_Sacra_PPI_Indices_Comparison.png"),
     width = 2560, height = 1440, res = 150)
 
-plot(MacchiaSacra_Comparison_Rasters) # A nice comparison plot
+plot(MS_PPI_Index_Comparison_Rasters) # A nice comparison plot
 
 dev.off()
 
 ### Assess and compare each index's performance ####
 ## Firstly, import the shape file of land cover classification
-
 # Path to the land cover classification shapefile from Matteo
 
-MacchiaSacra_LandCover_File <- file.path(Macchia_Input, "MS_Data_From_Matteo/MacchiaSacra_Shapefile/MacchiaSacra_32632.shp")
+MS.land.cover.file <- file.path(Macchia_Input, "MS_Data_From_Matteo/MacchiaSacra_Shapefile/MacchiaSacra_32632.shp")
 
 # Read vector landcover
 
-MacchiaSacra_LandCover_Vector <- vect(MacchiaSacra_LandCover_File)
+MacchiaSacra_LandCover_Vector <- vect(MS.land.cover.file)
 
 # Ensure CRS matches diversity rasters
 
-if (crs(ShannonH_raster) != crs(MacchiaSacra_LandCover_Vector)){
+if (crs(MS_PPI_Index_Comparison_Rasters) != crs(MacchiaSacra_LandCover_Vector)){
   message("The shapefile's CRS differs from the diversity index raster's CRS")
-  MacchiaSacra_LandCover_Vector <- project(MacchiaSacra_LandCover_Vector, crs(ShannonH_raster)) # reprojects the shapefile if CRSs differ
+  MacchiaSacra_LandCover_Vector <- project(MacchiaSacra_LandCover_Vector, crs(MS_PPI_Index_Comparison_Rasters)) # reprojects the shapefile if CRSs differ
 } else {message("The shapefile's CRS matches the diversity index raster's CRS")}
 
 ## The rasters exceed the boundaries of the shapefile, so they will be cropped to size
 # Crop to polygon extent
 
-ShannonH_crop     <- crop(ShannonH_raster, MacchiaSacra_LandCover_Vector)
-Rao_classic_crop <- crop(Rao_classic$window.3$alpha.2, MacchiaSacra_LandCover_Vector)
-Rao_TWDTW_crop   <- crop(Rao_TWDTW$window.3$alpha.2, MacchiaSacra_LandCover_Vector)
+cropped.MS_PPI_ShannonH_Raster     <- crop(MS_PPI_ShannonH_Raster, MacchiaSacra_LandCover_Vector)
+cropped.MS_PPI_Classic_RaoQ <- crop(MS_PPI_Classic_RaoQ$window.3$alpha.2, MacchiaSacra_LandCover_Vector)
+cropped.MS_PPI_TWDTW_RaoQ   <- crop(MS_PPI_TWDTW_RaoQ$window.3$alpha.2, MacchiaSacra_LandCover_Vector)
 
 # Mask outside polygon
 
-ShannonH_masked     <- mask(ShannonH_crop, MacchiaSacra_LandCover_Vector)
-Rao_classic_masked <- mask(Rao_classic_crop, MacchiaSacra_LandCover_Vector)
-Rao_TWDTW_masked   <- mask(Rao_TWDTW_crop, MacchiaSacra_LandCover_Vector)
+masked.MS_PPI_ShannonH_Raster     <- mask(cropped.MS_PPI_ShannonH_Raster, MacchiaSacra_LandCover_Vector)
+masked.MS_PPI_Classic_RaoQ <- mask(cropped.MS_PPI_Classic_RaoQ, MacchiaSacra_LandCover_Vector)
+masked.MS_PPI_TWDTW_RaoQ   <- mask(cropped.MS_PPI_TWDTW_RaoQ, MacchiaSacra_LandCover_Vector)
 
 ## Make land cover classes rasterised instead of vectorised
 # Firstly, I need to give each polygon/vector within the spatial vector a proper category label
@@ -256,7 +253,7 @@ MacchiaSacra_LandCover_Vector$CAT <- MacchiaSacra_LandCover_Vector$decsr
 
 MacchiaSacra_LandCover_Raster <- rasterize(
   MacchiaSacra_LandCover_Vector,
-  ShannonH_masked,
+  masked.MS_PPI_ShannonH_Raster,
   field = "CAT"
 )
 
@@ -265,33 +262,33 @@ plot(MacchiaSacra_LandCover_Raster) # Looks cool
 ## Put the pixel values into a dataframe for easier computation
 # Firstly, stack the spatial rasters into one object with vegetation class
 
-MacchiaSacra_Indices_Comparison_Raster <- c(
-  ShannonH_masked,
-  Rao_classic_masked,
-  Rao_TWDTW_masked,
+masked.MS_PPI_Index_Comparison_Rasters <- c(
+  masked.MS_PPI_ShannonH_Raster,
+  masked.MS_PPI_Classic_RaoQ,
+  masked.MS_PPI_TWDTW_RaoQ,
   MacchiaSacra_LandCover_Raster
 )
 
 # Rename the different layers of the spatial raster to something more memorable
 
-names(MacchiaSacra_Indices_Comparison_Raster) <- c(
-  "ShannonH",
-  "Rao's Q Classic",
-  "Rao's Q TWDTW",
+names(masked.MS_PPI_Index_Comparison_Rasters) <- c(
+  "ShannonH (PPI Derived)",
+  "Rao's Q Classic (PPI Derived)",
+  "Rao's Q TWDTW (PPI Derived)",
   "Vegetation Ground Truth"
 )
 
 # Convert the spatial raster to dataframe
 
-MacchiaSacra_Indices_Comparison_DF <- as.data.frame(MacchiaSacra_Indices_Comparison_Raster, na.rm = TRUE)
+masked.MS_PPI_Index_Comparison_DF <- as.data.frame(masked.MS_PPI_Index_Comparison_Rasters, na.rm = TRUE)
 
 # Ensure vegetation is treated as factor [It is so I've disabled this line]
 # 
-# MacchiaSacra_Indices_Comparison_DF$Vegetation <- as.factor(MacchiaSacra_Indices_Comparison_DF$Vegetation)
+# masked.MS_PPI_Index_Comparison_DF$Vegetation <- as.factor(masked.MS_PPI_Index_Comparison_DF$Vegetation)
 
 # Rename the column names because otherwise R gets fussy
 
-colnames(MacchiaSacra_Indices_Comparison_DF) <- c(
+colnames(masked.MS_PPI_Index_Comparison_DF) <- c(
   "ShannonH",
   "RaosQ_Classic",
   "RaosQ_TWDTW",
@@ -301,46 +298,46 @@ colnames(MacchiaSacra_Indices_Comparison_DF) <- c(
 ## Run the PERMANOVA
 # How much variance in each index is explained by each vegetation class?
 
-PERMANOVA_Shannon <- adonis2(
-  MacchiaSacra_Indices_Comparison_DF$ShannonH ~ 
-    MacchiaSacra_Indices_Comparison_DF$Veg_GroundTruth,
+MS_PPI_PERMANOVA_Shannon <- adonis2(
+  masked.MS_PPI_Index_Comparison_DF$ShannonH ~ 
+    masked.MS_PPI_Index_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
-PERMANOVA_RaosQ_Classic <- adonis2(
-  MacchiaSacra_Indices_Comparison_DF$RaosQ_Classic ~ 
-    MacchiaSacra_Indices_Comparison_DF$Veg_GroundTruth,
+MS_PPI_PERMANOVA_RaosQ_Classic <- adonis2(
+  masked.MS_PPI_Index_Comparison_DF$RaosQ_Classic ~ 
+    masked.MS_PPI_Index_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
-PERMANOVA_RaosQ_TWDTW <- adonis2(
-  MacchiaSacra_Indices_Comparison_DF$RaosQ_TWDTW ~ 
-    MacchiaSacra_Indices_Comparison_DF$Veg_GroundTruth,
+MS_PPI_PERMANOVA_RaosQ_TWDTW <- adonis2(
+  masked.MS_PPI_Index_Comparison_DF$RaosQ_TWDTW ~ 
+    masked.MS_PPI_Index_Comparison_DF$Veg_GroundTruth,
   permutations = 9999
 )
 
 ## Extract R² and p-values
 
-MacchiaSacra_PERMANOVA_Results <- data.frame(
+MacchiaSacra_PPI_PERMANOVA_Results <- data.frame(
   Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
   R2 = c(
-    PERMANOVA_Shannon$R2[1],
-    PERMANOVA_RaosQ_Classic$R2[1],
-    PERMANOVA_RaosQ_TWDTW$R2[1]
+    MS_PPI_PERMANOVA_Shannon$R2[1],
+    MS_PPI_PERMANOVA_RaosQ_Classic$R2[1],
+    MS_PPI_PERMANOVA_RaosQ_TWDTW$R2[1]
   ),
   `F` = c(
-    PERMANOVA_Shannon$F[1],
-    PERMANOVA_RaosQ_Classic$F[1],
-    PERMANOVA_RaosQ_TWDTW$F[1]
+    MS_PPI_PERMANOVA_Shannon$F[1],
+    MS_PPI_PERMANOVA_RaosQ_Classic$F[1],
+    MS_PPI_PERMANOVA_RaosQ_TWDTW$F[1]
   ),
   p_value = c(
-    PERMANOVA_Shannon$`Pr(>F)`[1],
-    PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
-    PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
+    MS_PPI_PERMANOVA_Shannon$`Pr(>F)`[1],
+    MS_PPI_PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
+    MS_PPI_PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
   )
 )
 
-print(MacchiaSacra_PERMANOVA_Results)
+print(MacchiaSacra_PPI_PERMANOVA_Results)
 
 #### Assess artefact (road) influence on diversity indices ####
 ### This analysis will test the ability of TWDTW Rao's Q to remove artefacts and compare it to other indices
@@ -356,8 +353,8 @@ MacchiaSacra_Road_Vector <- vect(MacchiaSacra_Road_File)
 
 # Ensure CRS matches
 
-if (crs(MacchiaSacra_Road_Vector) != crs(ShannonH_masked)){
-  MacchiaSacra_Road_Vector <- project(MacchiaSacra_Road_Vector, crs(ShannonH_masked))
+if (crs(MacchiaSacra_Road_Vector) != crs(masked.MS_PPI_ShannonH_Raster)){
+  MacchiaSacra_Road_Vector <- project(MacchiaSacra_Road_Vector, crs(masked.MS_PPI_ShannonH_Raster))
   message("The road's CRS differs from the diversity index raster's CRS")
 } else {message("The road's CRS already matches the diversity index raster's CRS")}
 
@@ -366,7 +363,7 @@ if (crs(MacchiaSacra_Road_Vector) != crs(ShannonH_masked)){
 
 MacchiaSacra_Road_Raster <- rasterize(
   MacchiaSacra_Road_Vector,
-  PPI_ts[[146]],
+  MS_PPI_Mean_Raster,
   field = 1
 )
 
@@ -378,50 +375,46 @@ names(MacchiaSacra_Road_Raster) <- "Road"
 
 ## 3. Stack indices with road mask
 
-MacchiaSacra_Road_Comparison_Raster <- c(
-  PPI_ts[[146]], # The last PPI image for straightforward visual analysis
-  NDVI_ts[[146]], # The last NDVI image because everyone wants to see NDVI
-  ShannonH_raster,
-  Rao_classic$window.3$alpha.2,
-  Rao_TWDTW$window.3$alpha.2,
+MS_PPI_Road_Comparison_Raster <- c(
+  MS_PPI_Mean_Raster, # The mean PPI raster for straightforward visual analysis
+  MS_PPI_ShannonH_Raster,
+  MS_PPI_Classic_RaoQ$window.3$alpha.2,
+  MS_PPI_TWDTW_RaoQ$window.3$alpha.2,
   MacchiaSacra_Road_Raster
 )
 
-names(MacchiaSacra_Road_Comparison_Raster) <- c(
+names(MS_PPI_Road_Comparison_Raster) <- c(
   "PPI",
-  "NDVI",
   "ShannonH",
   "RaosQ_Classic",
   "RaosQ_TWDTW",
   "Road"
 )
 
-MacchiaSacra_Road_Comparison_DF <- as.data.frame(
-  MacchiaSacra_Road_Comparison_Raster,
+MS_PPI_Road_Comparison_DF <- as.data.frame(
+  MS_PPI_Road_Comparison_Raster,
   na.rm = TRUE
 )
 
-MacchiaSacra_Road_Comparison_DF$Road <- as.factor(
-  MacchiaSacra_Road_Comparison_DF$Road
+MS_PPI_Road_Comparison_DF$Road <- as.factor(
+  MS_PPI_Road_Comparison_DF$Road
 )
 
 ## 4. Compare mean contrast (effect size proxy)
 
 Road_Contrast_Results <- data.frame(
-  Index = c("PPI", "NDVI", "Shannon", "Classic Rao", "TWDTW Rao"),
+  Index = c("PPI", "Shannon", "Classic Rao", "TWDTW Rao"),
   Mean_Road = c(
-    mean(MacchiaSacra_Road_Comparison_DF$PPI[MacchiaSacra_Road_Comparison_DF$Road == 1]),
-    mean(MacchiaSacra_Road_Comparison_DF$NDVI[MacchiaSacra_Road_Comparison_DF$Road == 1]),
-    mean(MacchiaSacra_Road_Comparison_DF$ShannonH[MacchiaSacra_Road_Comparison_DF$Road == 1]),
-    mean(MacchiaSacra_Road_Comparison_DF$RaosQ_Classic[MacchiaSacra_Road_Comparison_DF$Road == 1]),
-    mean(MacchiaSacra_Road_Comparison_DF$RaosQ_TWDTW[MacchiaSacra_Road_Comparison_DF$Road == 1])
+    mean(MS_PPI_Road_Comparison_DF$PPI[MS_PPI_Road_Comparison_DF$Road == 1]),
+    mean(MS_PPI_Road_Comparison_DF$ShannonH[MS_PPI_Road_Comparison_DF$Road == 1]),
+    mean(MS_PPI_Road_Comparison_DF$RaosQ_Classic[MS_PPI_Road_Comparison_DF$Road == 1]),
+    mean(MS_PPI_Road_Comparison_DF$RaosQ_TWDTW[MS_PPI_Road_Comparison_DF$Road == 1])
   ),
   Mean_NonRoad = c(
-    mean(MacchiaSacra_Road_Comparison_DF$PPI[MacchiaSacra_Road_Comparison_DF$Road == 0]),
-    mean(MacchiaSacra_Road_Comparison_DF$NDVI[MacchiaSacra_Road_Comparison_DF$Road == 0]),
-    mean(MacchiaSacra_Road_Comparison_DF$ShannonH[MacchiaSacra_Road_Comparison_DF$Road == 0]),
-    mean(MacchiaSacra_Road_Comparison_DF$RaosQ_Classic[MacchiaSacra_Road_Comparison_DF$Road == 0]),
-    mean(MacchiaSacra_Road_Comparison_DF$RaosQ_TWDTW[MacchiaSacra_Road_Comparison_DF$Road == 0])
+    mean(MS_PPI_Road_Comparison_DF$PPI[MS_PPI_Road_Comparison_DF$Road == 0]),
+    mean(MS_PPI_Road_Comparison_DF$ShannonH[MS_PPI_Road_Comparison_DF$Road == 0]),
+    mean(MS_PPI_Road_Comparison_DF$RaosQ_Classic[MS_PPI_Road_Comparison_DF$Road == 0]),
+    mean(MS_PPI_Road_Comparison_DF$RaosQ_TWDTW[MS_PPI_Road_Comparison_DF$Road == 0])
   )
 )
 
@@ -433,45 +426,45 @@ print(Road_Contrast_Results)
 
 ## 5. Wilcoxon tests (non-parametric contrast test)
 
-Wilcox_Shannon <- wilcox.test(ShannonH ~ Road,
-                              data = MacchiaSacra_Road_Comparison_DF)
+MS_PPI_Wilcox_Shannon <- wilcox.test(ShannonH ~ Road,
+                              data = MS_PPI_Road_Comparison_DF)
 
-Wilcox_Classic <- wilcox.test(RaosQ_Classic ~ Road,
-                              data = MacchiaSacra_Road_Comparison_DF)
+MS_PPI_Wilcox_Classic <- wilcox.test(RaosQ_Classic ~ Road,
+                              data = MS_PPI_Road_Comparison_DF)
 
-Wilcox_TWDTW <- wilcox.test(RaosQ_TWDTW ~ Road,
-                            data = MacchiaSacra_Road_Comparison_DF)
+MS_PPI_Wilcox_TWDTW <- wilcox.test(RaosQ_TWDTW ~ Road,
+                            data = MS_PPI_Road_Comparison_DF)
 
 ## 6. ROC–AUC comparison
 # Higher AUC = stronger ability to detect road
 # More robustness = LOWER AUC
 
-ROC_Shannon <- roc(
-  MacchiaSacra_Road_Comparison_DF$Road,
-  MacchiaSacra_Road_Comparison_DF$ShannonH
+MS_PPI_ROC_Shannon <- roc(
+  MS_PPI_Road_Comparison_DF$Road,
+  MS_PPI_Road_Comparison_DF$ShannonH
 )
 
-ROC_Classic <- roc(
-  MacchiaSacra_Road_Comparison_DF$Road,
-  MacchiaSacra_Road_Comparison_DF$RaosQ_Classic
+MS_PPI_ROC_Classic <- roc(
+  MS_PPI_Road_Comparison_DF$Road,
+  MS_PPI_Road_Comparison_DF$RaosQ_Classic
 )
 
-ROC_TWDTW <- roc(
-  MacchiaSacra_Road_Comparison_DF$Road,
-  MacchiaSacra_Road_Comparison_DF$RaosQ_TWDTW
+MS_PPI_ROC_TWDTW <- roc(
+  MS_PPI_Road_Comparison_DF$Road,
+  MS_PPI_Road_Comparison_DF$RaosQ_TWDTW
 )
 
-Road_ROC_Results <- data.frame(
+MS_PPI_Road_ROC_Results <- data.frame(
   Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
   AUC = c(
-    auc(ROC_Shannon),
-    auc(ROC_Classic),
-    auc(ROC_TWDTW)
+    auc(MS_PPI_ROC_Shannon),
+    auc(MS_PPI_ROC_Classic),
+    auc(MS_PPI_ROC_TWDTW)
   )
 )
 
-print(Road_ROC_Results)
+print(MS_PPI_Road_ROC_Results)
 
 ### End of analyses ####
 
-message("Macchia Sacra analysis complete.")
+message("Macchia Sacra PPI analysis complete.")
