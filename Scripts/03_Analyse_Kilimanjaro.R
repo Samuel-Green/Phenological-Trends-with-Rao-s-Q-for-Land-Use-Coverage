@@ -634,15 +634,15 @@ kili.land.cover.lookup <- c(
   "7"  = "Forest plantation",
   "9"  = "Riverine",
   "10" = "Upper montane Erica excelsa forest (FPO Podocarpus disturbed)",
-  "11" = "Subalpine Erica trimera bushland (FED incl FER)",
-  "12" = "FPO",
+  "11" = "Subalpine Erica trimera bushland (FED incl FER (Erica forest and bushland))",
+  "12" = "Podocarpus forest (FPO)",
   "13" = "Subalpine tussock grassland",
-  "14" = "HOM",
-  "15" = "HEL",
-  "16" = "FOC",
+  "14" = "Chagga homegardens (HOM)",
+  "15" = "Alpine Helichrysum vegetation (HEL)",
+  "16" = "Ocotea forest (FOC)",
   "17" = "Bare rock",
-  "18" = "FLM",
-  "19" = "COF"
+  "18" = "Sub/lower montane rainforest (FLM)",
+  "19" = "Coffee plantations (COF)"
 )
 
 # Assign readable names to the grid code vector of the ground truth
