@@ -1,6 +1,6 @@
 ############################################################################ ###
 # Elliot Samuel Shayle - University of Marburg - 24/02/2026                    #
-# 03_Analyse_Kilimanjaro_NDVI.R                                                #
+# 03_Analyse_Kilimanjaro_NDVI.R                                                     #
 # Conducting comparative analysis of TWDTW Rao's Q and classic Rao's Q in Kili #
 ############################################################################ ###
 

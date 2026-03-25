@@ -19,6 +19,7 @@ install.packages("vegan")
 install.packages("snow")
 install.packages("parallel")
 install.packages("pROC")
+remotes::install_github("mitmat/ppi")
 
 ## Load libraries
 
@@ -33,6 +34,7 @@ library(vegan)
 library(snow)
 library(parallel)
 library(pROC)
+library(ppi)
 
 ### Reproducibility settings ####
 
