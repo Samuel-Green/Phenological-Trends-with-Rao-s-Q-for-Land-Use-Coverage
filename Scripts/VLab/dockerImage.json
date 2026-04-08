@@ -1,0 +1,18 @@
+{
+  "image": "ilsanto/test_ppresil:5",
+  "privateimage":true,
+  "resources": {
+    "memory_mb": "16000",
+    "cpu_units": ""
+	},
+  "container": {
+    "entryPoint": [
+      "/bin/bash",
+      "-c"
+	],
+    "command": [
+      "python3 -u ./VlabRunner.py"
+	]
+  }
+}
+

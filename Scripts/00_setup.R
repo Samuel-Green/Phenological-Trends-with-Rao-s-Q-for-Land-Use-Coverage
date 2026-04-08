@@ -20,6 +20,7 @@ install.packages("snow")
 install.packages("parallel")
 install.packages("pROC")
 remotes::install_github("mitmat/ppi")
+install.packages("ncdf4")
 
 ## Load libraries
 
@@ -35,6 +36,7 @@ library(snow)
 library(parallel)
 library(pROC)
 library(ppi)
+library(ncdf4)
 
 ### Reproducibility settings ####
 
@@ -43,8 +45,8 @@ set.seed(123)
 
 ### Path definitions ####
 
-InputData <- here::here("Data 🔢/Input Data")
-ProcessedData <- here::here("Data 🔢/Processed Data")
+InputData <- here::here("Data/Input Data")
+ProcessedData <- here::here("Data/Processed Data")
 Results <- here::here("Results 📈📉")
 
 ### Site-specific paths ####

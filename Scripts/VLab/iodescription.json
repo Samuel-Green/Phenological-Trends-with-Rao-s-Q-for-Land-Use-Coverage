@@ -1,0 +1,124 @@
+{
+  "inputs": [
+    {
+      "id": "DataStack",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "Time series of vegetation index. Format is expected to be multilayer envi, tif or single variable netcdf file. The band name need to have time information expressed as year/month/day. Band name can be composed of timeinfo_somethingelse ",
+      "name": "Input archive URL",
+      "obligation": true,
+      "hasDefault": false,
+      "valueSchema": "url",
+      "target": "DataInput.zip"
+    },
+    {
+      "id": "bbox",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "Bounding Box (numbers separated by commas: west,south,east,north)",
+      "name": "Bounding Box ",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": false,
+      "valueSchema": "bbox"
+    },
+    {
+      "id": "mask",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "OGR vectorial file to indicate the Region Of Interest, only first element would used. It is expected a polyline",
+      "name": "Vector to select ROI",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": "http://cloud.recas.ba.infn.it:8080/v1/AUTH_fb6d6fcd0e194a96bb6d0420dce8332f/backgroundinfo/BBfileDefault.txt",
+      "valueSchema": "url",
+      "target": "mask.zip"
+    },
+    {
+      "id": "change",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "The model would assume changes in seasonality across years beyond the mean, true or false",
+      "name": "Yearly change\n (true or false)",
+      "obligation": false,
+      "hasDefault": true,
+       "defaultValue": true,
+      "valueSchema": "string_parameter"
+    },
+    {
+      "id": "Event",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "The model would register time and size of larger change within the year, true or false",
+      "name": "Yearly Event\n (true or false)",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": false,
+      "valueSchema": "string_parameter"
+    },
+    {
+      "id": "Expected",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "The model would output only expected values and their estimated errors, true or false",
+      "name": "Output Expected Value\n (true or false)",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": false,
+      "valueSchema": "string_parameter"
+    },
+    {
+      "id": "freqsubsample",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "Temporal frequency used by the model to estimate annual statistics",
+      "name": "Temporal Frequency of model sampling (number of days)",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": false,
+      "valueSchema": "string_parameter"
+    },
+    {
+      "id": "dense",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "Model could assume data enough dense that informed prior from other years could be avoided, (true or false)",
+      "name": "Sufficently dense data across years\n (true or false)",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": false,
+      "valueSchema": "string_parameter"
+    },
+    {
+      "id": "suffix",
+      "inputType": "individual",
+      "valueType": "value",
+      "description": "name file of output",
+      "name": "Suffix output (string)",
+      "obligation": false,
+      "hasDefault": true,
+      "defaultValue": "Output",
+      "valueSchema": "string_parameter"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "Output_archive_PPresil",
+      "outputType": "individual",
+      "valueType": "value",
+      "description": "Output image in ENVI format showing Time Series Statistics. First 3 layers are the Ecological Functional Attributes.\\n pvalue and Rsq are the significance and the explained variance of the Harmonic model. Liupvalue is the probability that the residual have autocorrelated signal",
+      "name": "Output image",
+      "valueSchema": "url",
+      "target": "./Output.zip"
+    },
+    {
+      "id": "GraphicOutput",
+      "outputType": "individual",
+      "valueType": "value",
+      "description": "Output image in ENVI format showing Time Series Statistics. First 3 layers are the Ecological Functional Attributes.\\n pvalue and Rsq are the significance and the explained variance of the Harmonic model. Liupvalue is the probability that the residual have autocorrelated signal",
+      "name": "Interannual Standard Dev.",
+      "valueSchema": "wms",
+      "target": "./wms.json" 
+    }
+  ]
+}

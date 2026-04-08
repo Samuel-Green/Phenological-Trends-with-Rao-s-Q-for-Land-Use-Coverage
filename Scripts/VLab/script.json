@@ -1,0 +1,24 @@
+{
+  "scripts": [
+    {
+      "repoPath": "VlabRunner.py",
+      "targetPath": "VlabRunner.py",
+      "pathType": "FILE"
+    },
+    {
+      "repoPath":"paletteViridis.csv",
+      "targetPath":"paletteViridis.csv",
+      "pathType": "FILE"
+    },
+    {
+      "repoPath": "PPresilBayes.py",
+      "targetPath": "PPresilBayes.py",
+      "pathType": "FILE"
+    },
+    {
+      "repoPath": "linear_model.py",
+      "targetPath": "linear_model.py",
+      "pathType": "FILE"
+    }
+  ]
+}
