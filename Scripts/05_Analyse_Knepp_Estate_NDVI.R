@@ -79,7 +79,7 @@ if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Boundaries)){
 
 ### Export the dataset as a NetCDF file for Gaussian Processing ####
 ## The Gaussian Process takes place separately in Python
-## Export the data in the NetCDD format for use in the Python script
+## Export the data in the NetCDF format for use in the Python script
 # Define the export path for the raw NetCDF
 
 Knepp_NCDF_Raw_NDVI_Path <- file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Raw.nc")
@@ -102,10 +102,11 @@ terra::writeCDF(
 )
 
 ## Calculate the mean seasonal trajectory across the site
-# Calculate the site's mean value for each month
 # Crop to Knepp Estate site boundaries
 
 Knepp_Timeseries.NDVI <- crop(Knepp_Buffered_Timeseries.NDVI, KneppEstate_Boundaries, mask = TRUE)
+
+# Calculate the site's mean value for each month
 
 Knepp_Timeseries_Mean_NDVI <- global(Knepp_Timeseries.NDVI, fun = "mean", na.rm = TRUE) 
 
@@ -403,84 +404,347 @@ Knepp_NDVI_YoI <- lapply(YoI, function(y) {
 
 names(Knepp_NDVI_YoI) <- YoI
 
-### Now I must compute Shannon's H and both Rao's Qs for each of those yearly rasters
-## To keep the code neat, here's a function which uses the `rasterdiv` functions to compute these
+### Clean the dataset so that only pixels with complete data across all layers are retained ####
+## First, a brief visual overview of the data
+# This is optional, but it can be helpful to understand the data before applying the cleaning function
 
-Knepp_NDVI_YearlyDiversityIndices <- function(r_stack, time_vector) {
-  
-  ## Mean NDVI (collapse time)
-  
-  mean_ndvi <- app(r_stack, mean, na.rm = TRUE)
-  
-  # Round to avoid Shannon saturation
-  
-  mean_ndvi_2dec <- round(mean_ndvi, 2)
-  
-  ## Compute Shannon's H
-  # This follows the same structure as elsewhere in this script
-  
-  shannon_mat <- rasterdiv::ShannonS(
-    x = terra::as.matrix(mean_ndvi_2dec, wide = TRUE),
-    window = 3,
-    na.tolerance = 0
-  )
-  
-  shannon_rast <- rast(shannon_mat)
-  ext(shannon_rast) <- ext(mean_ndvi_2dec)
-  crs(shannon_rast) <- crs(mean_ndvi_2dec)
-  
-  ## Classic Rao's Q
-  # `simplify = 2`, equivalent to 2 decimal places
-  
-  rao_classic <- paRao(
-    x = mean_ndvi,
-    window = 3,
-    alpha = 2,
-    na.tolerance = 0,
-    simplify = 2,
-    method = "classic"
-  )$window.3$alpha.2
-  
-  ## TWDTW Rao's Q (uses full time series)
-  # `simplify = 2`, equivalent to 2 decimal places
-  
-  rao_twdtw <- paRao(
-    x = r_stack,
-    time_vector = time_vector,
-    window = 3,
-    alpha = 2,
-    na.tolerance = 0,
-    simplify = 2,
-    method = "multidimension",
-    dist_m = "twdtw",
-    midpoint = 6,
-    stepness = -0.5,
-    cycle_length = "year",
-    time_scale = "month"
-  )$window.3$alpha.2
-  
-  ## Return everything nicely bundled
-  
-  return(list(
-    Knepp_Mean_NDVI = mean_ndvi,
-    Knepp_NDVI_ShannonsH = shannon_rast,
-    Knepp_NDVI_Classic_RaoQ = rao_classic,
-    Knepp_NDVI_TWDTW_RaoQ = rao_twdtw
-  ))
+for(i in 1:nlyr(Knepp_NDVI_YoI[[4]])) {
+  plot(Knepp_NDVI_YoI[[4]][[i]], main = names(Knepp_NDVI_YoI[[4]])[i])
+  if(i < nlyr(Knepp_NDVI_YoI[[4]])) readline(prompt = "Press [enter] to continue")
 }
 
-## And now I apply this newly defined function to each year of Knepp Estate data
-# This function goes over each year in the raster stack and computes the indices
+# TEMPORARY line to drop 2 dodgy layers from the 2015 stack (these layers have >90% NA values, which is a problem for the subsequent analyses)
 
-Knepp_Indices_YoI.NDVI_derived <- lapply(names(Knepp_NDVI_YoI), function(y) {
+Knepp_NDVI_YoI[[3]] <- Knepp_NDVI_YoI[[3]][[1:10]]
+
+# Now a function to create a mask of pixels with complete data across all layers, and apply it to the stack 
+
+Knepp_NDVI_YoI_Clean <- mapply(function(r_stack, y) {
   
-  r <- Knepp_NDVI_YoI[[y]]
-  t <- Knepp_Time[Knepp_years == y]
+  message("Processing year: ", y)
   
-  Knepp_NDVI_YearlyDiversityIndices(r, t)
+  message("Creating complete-case mask...")
+  
+  # TRUE where all layers are non-NA
+  
+  pixel_mask <- app(r_stack, function(x) all(!is.na(x)))
+  
+  message("Applying mask...")
+  
+  r_clean <- mask(r_stack, pixel_mask, maskvalues = 0)
+  
+  ## Save cleaned rasters
+  
+  out_path <- file.path(
+    Knepp_Processed,
+    paste0("Knepp_Buffered_NDVI_", y, "_Clean.tif")
+  )
+  
+  message("Writing cleaned raster to disk: ", out_path)
+  
+  writeRaster(
+    r_clean,
+    filename = out_path,
+    overwrite = TRUE
+  )
+  
+  return(r_clean)
+  
+}, Knepp_NDVI_YoI, names(Knepp_NDVI_YoI), SIMPLIFY = FALSE)
+
+## Load  back in these rasters instead, if necessary and previously computed
+
+Knepp_NDVI_YoI_Clean <- lapply(YoI, function(y) {
+  rast(file.path(Knepp_Processed, paste0("Knepp_Buffered_NDVI_", y, "_Clean.tif")))
 })
 
-names(Knepp_Indices_YoI.NDVI_derived) <- names(Knepp_NDVI_YoI)
+### Mosaic tiles for export and parallelisation on HPC (MaRC3a) ####
+## Due to the size of the site and the need to run concurrently on 4 discrete years of data
+## I will mosaic the dataset into 1000 tiles (similar to the Kili analysis) for later processing on the HPC
+
+Knepp_NDVI_tile_info <- list()  # store metadata for later
+
+for (y in YoI) {
+  
+  message("Creating tiles for year: ", y)
+  
+  # Get rasters
+  #tmp.r_stack <- Knepp_NDVI_YoI[[y]] # This is the original, uncleaned stack. It will be reactivated when I have gap-filled data
+  tmp.r_stack <- Knepp_NDVI_YoI_Clean[[y]] # This is the cleaned stack, with only pixels with complete data across all layers
+  tmp.mean_raster <- app(tmp.r_stack, mean, na.rm = TRUE)
+  
+  # Trim outer NA borders (important for efficiency)
+  tmp.trimmed_mean <- trim(tmp.mean_raster)
+  
+  # -------------------------------
+  # DEFINE TILE GRID
+  # -------------------------------
+  
+  knepp.tile.count <- 500  # same philosophy as Kili, but half as many tiles
+  
+  knepp.aspect.ratio <- ncol(tmp.trimmed_mean) / nrow(tmp.trimmed_mean)
+  
+  knepp.tiling.factors <- expand.grid(
+    ncols = 1:knepp.tile.count,
+    nrows = 1:knepp.tile.count
+  )
+  
+  knepp.tiling.factors <- knepp.tiling.factors[
+    knepp.tiling.factors$ncols * knepp.tiling.factors$nrows == knepp.tile.count, ]
+  
+  knepp.tiling.factors$ratio_diff <- abs(
+    (knepp.tiling.factors$ncols / knepp.tiling.factors$nrows) - knepp.aspect.ratio
+  )
+  
+  knepp.tile.target.size <- knepp.tiling.factors[which.min(knepp.tiling.factors$ratio_diff), ]
+  
+  knepp.cols <- knepp.tile.target.size$ncols
+  knepp.rows <- knepp.tile.target.size$nrows
+  
+  # -------------------------------
+  # CREATE GRID
+  # -------------------------------
+  
+  knepp.tiling.grid <- as.polygons(
+    rast(
+      ext(tmp.trimmed_mean),
+      ncols = knepp.cols,
+      nrows = knepp.rows,
+      crs = crs(tmp.trimmed_mean)
+    )
+  )
+  
+  # Save grid (important for reproducibility + debugging)
+  
+  knepp.tiles.filepath <- file.path(Knepp_Processed, paste0("Knepp_Tiling_Grid_", y, ".geojson"))
+  
+  writeVector(knepp.tiling.grid, knepp.tiles.filepath, filetype = "GeoJSON", overwrite = TRUE)
+  
+  knepp.tiling.grid <- vect(knepp.tiles.filepath)
+  
+  # -------------------------------
+  # TILE SETTINGS
+  # -------------------------------
+  
+  RaoQ.window.size <- 3
+  tmp.tile.overlap <- floor(RaoQ.window.size / 2)
+  
+  # -------------------------------
+  # OUTPUT DIRECTORIES
+  # -------------------------------
+  
+  tmp.knepp.mean.tile.dir <- file.path(Knepp_Processed, paste0("Knepp_", y, "_MeanNDVI_Tiles"))
+  tmp.knepp.ts.tile.dir   <- file.path(Knepp_Processed, paste0("Knepp_", y, "_NDVI_Timeseries_Tiles"))
+  
+  dir.create(tmp.knepp.mean.tile.dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(tmp.knepp.ts.tile.dir, recursive = TRUE, showWarnings = FALSE)
+  
+  # -------------------------------
+  # SAVE TIME VECTOR (CRITICAL FOR TWDTW)
+  # -------------------------------
+  
+  tmp.time.vector <- Knepp_Time[Knepp_years == y]
+  
+  writeLines(
+    as.character(tmp.time.vector),
+    file.path(tmp.knepp.ts.tile.dir, "time_vector.txt")
+  )
+  
+  # -------------------------------
+  # CREATE TILES
+  # -------------------------------
+  
+  message("Tiling NDVI MEAN raster for year: ", y)
+  
+  makeTiles(
+    tmp.trimmed_mean,
+    y = knepp.tiling.grid,
+    buffer = tmp.tile.overlap,
+    filename = file.path(tmp.knepp.mean.tile.dir, paste0("Knepp_", y, "_Mean_Tile-.tif")),
+    overwrite = TRUE
+  )
+  
+  message("Tiling NDVI TIMESERIES raster for year: ", y)
+  
+  makeTiles(
+    tmp.r_stack,
+    y = knepp.tiling.grid,
+    buffer = tmp.tile.overlap,
+    filename = file.path(tmp.knepp.ts.tile.dir, paste0("Knepp_", y, "_TS_Tile-.tif")),
+    overwrite = TRUE
+  )
+  
+  # -------------------------------
+  # STORE METADATA (CRUCIAL LATER)
+  # -------------------------------
+  
+  Knepp_NDVI_tile_info[[y]] <- list(
+    cols = knepp.cols,
+    rows = knepp.rows,
+    n_tiles = knepp.tile.count,
+    mean_dir = tmp.knepp.mean.tile.dir,
+    ts_dir = tmp.knepp.ts.tile.dir
+  )
+}
+
+### Demosaic Knepp Estate tiles for further analysis and visualisation ####
+## First, I will define a function that can demosaic tiles
+
+Knepp_Demosaic_RaoTiles <- function(tile_dir, output_file) {
+  
+  message("Reading tiles from: ", tile_dir)
+  
+  tile_files <- list.files(tile_dir, pattern = "\\.tif$", full.names = TRUE)
+  
+  if (length(tile_files) == 0) {
+    stop("No tiles found in: ", tile_dir)
+  }
+  
+  # Read all tiles
+  
+  tile_list <- lapply(tile_files, rast)
+  
+  message("Mosaicing ", length(tile_list), " tiles...")
+  
+  # Merge tiles (mean handles overlap nicely)
+  
+  mosaiced <- do.call(mosaic, c(tile_list, fun = "mean"))
+  
+  message("Trimming outer NA borders...")
+  
+  mosaiced <- trim(mosaiced)
+  
+  message("Writing output...")
+  
+  writeRaster(mosaiced, output_file, overwrite = TRUE)
+  
+  message("Done: ", output_file)
+  
+  return(mosaiced)
+}
+
+## Secondly, I will apply this function to the tiles for each year and Rao's Q method
+
+Knepp_Rao_Outputs_Dir <- file.path(Knepp_Processed) # Tell R where to find the files
+
+# Now load in the classical Rao's Q tiles
+
+for (y in c("2000", "2020")) {
+  
+  message("Demosaicing Classical Rao for year: ", y)
+  
+  tile_dir <- file.path(
+    Knepp_Rao_Outputs_Dir,
+    paste0("Knepp_", y, "_MeanNDVI_Tiles"),
+    "Rao-utputs"
+  )
+  
+  out_file <- file.path(
+    Knepp_Results,
+    paste0("Knepp_", y, "_NDVI_ClassicRao.tif")
+  )
+  
+  Knepp_Demosaic_RaoTiles(tile_dir, out_file)
+}
+
+# And now load in the TWDTW Rao's Q tiles
+
+for (y in c("2000", "2020")) {
+  
+  message("Demosaicing TWDTW Rao for year: ", y)
+  
+  tile_dir <- file.path(
+    Knepp_Rao_Outputs_Dir,
+    paste0("Knepp_", y, "_NDVI_Timeseries_Tiles"),
+    "Rao-utputs"
+  )
+  
+  out_file <- file.path(
+    Knepp_Results,
+    paste0("Knepp_", y, "_NDVI_TWDTW_Rao.tif")
+  )
+  
+  Knepp_Demosaic_RaoTiles(tile_dir, out_file)
+}
+
+### Now I must compute Shannon's H and both Rao's Qs for each of those yearly rasters
+## To keep the code neat, here's a function which uses the `rasterdiv` functions to compute these
+#
+# Knepp_NDVI_YearlyDiversityIndices <- function(r_stack, time_vector) {
+#   
+#   ## Mean NDVI (collapse time)
+#   
+#   mean_ndvi <- app(r_stack, mean, na.rm = TRUE)
+#   
+#   # Round to avoid Shannon saturation
+#   
+#   mean_ndvi_2dec <- round(mean_ndvi, 2)
+#   
+#   ## Compute Shannon's H
+#   # This follows the same structure as elsewhere in this script
+#   
+#   shannon_mat <- rasterdiv::ShannonS(
+#     x = terra::as.matrix(mean_ndvi_2dec, wide = TRUE),
+#     window = 3,
+#     na.tolerance = 0
+#   )
+#   
+#   shannon_rast <- rast(shannon_mat)
+#   ext(shannon_rast) <- ext(mean_ndvi_2dec)
+#   crs(shannon_rast) <- crs(mean_ndvi_2dec)
+#   
+#   ## Classic Rao's Q
+#   # `simplify = 2`, equivalent to 2 decimal places
+#   
+#   rao_classic <- paRao(
+#     x = mean_ndvi,
+#     window = 3,
+#     alpha = 2,
+#     na.tolerance = 0,
+#     simplify = 2,
+#     method = "classic"
+#   )$window.3$alpha.2
+#   
+#   ## TWDTW Rao's Q (uses full time series)
+#   # `simplify = 2`, equivalent to 2 decimal places
+#   
+#   rao_twdtw <- paRao(
+#     x = r_stack,
+#     time_vector = time_vector,
+#     window = 3,
+#     alpha = 2,
+#     na.tolerance = 0,
+#     simplify = 2,
+#     method = "multidimension",
+#     dist_m = "twdtw",
+#     midpoint = 6,
+#     stepness = -0.5,
+#     cycle_length = "year",
+#     time_scale = "month"
+#   )$window.3$alpha.2
+#   
+#   ## Return everything nicely bundled
+#   
+#   return(list(
+#     Knepp_Mean_NDVI = mean_ndvi,
+#     Knepp_NDVI_ShannonsH = shannon_rast,
+#     Knepp_NDVI_Classic_RaoQ = rao_classic,
+#     Knepp_NDVI_TWDTW_RaoQ = rao_twdtw
+#   ))
+# }
+# 
+# ## And now I apply this newly defined function to each year of Knepp Estate data
+# # This function goes over each year in the raster stack and computes the indices
+# 
+# Knepp_Indices_YoI.NDVI_derived <- lapply(names(Knepp_NDVI_YoI), function(y) {
+#   
+#   r <- Knepp_NDVI_YoI[[y]]
+#   t <- Knepp_Time[Knepp_years == y]
+#   
+#   Knepp_NDVI_YearlyDiversityIndices(r, t)
+# })
+# 
+# names(Knepp_Indices_YoI.NDVI_derived) <- names(Knepp_NDVI_YoI)
 
 ## Load and process the land cover maps from the UK's Centre for Ecology and Hydrology
 # Load the spatial rasters

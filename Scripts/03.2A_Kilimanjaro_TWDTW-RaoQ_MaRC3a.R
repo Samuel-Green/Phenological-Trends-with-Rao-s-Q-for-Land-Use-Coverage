@@ -1,5 +1,5 @@
 ###############################################################################
-# 02.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a
+# 03.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a
 # Processes ONE tile for TWDTW Rao's Q
 ###############################################################################
 
@@ -15,8 +15,8 @@ cat("Starting tile:", tile_id, "\n")
 
 # directories
 
-tile_dir <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles"
-out_dir  <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data 🔢/Processed Data/Kilimanjaro/Timeseries NDVI tiles/TWDTW Rao-utputs"
+tile_dir <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Timeseries NDVI tiles"
+out_dir  <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Timeseries NDVI tiles/TWDTW Rao-utputs"
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 

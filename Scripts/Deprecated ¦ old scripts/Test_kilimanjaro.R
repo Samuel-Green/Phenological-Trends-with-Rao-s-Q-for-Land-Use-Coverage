@@ -10,18 +10,19 @@ remotes::install_github("mattmar/rasterdiv")
 library(rasterdiv)
 library(terra)
 
-kili <- rast("/home/matteo/own_data/PoD/hackathon/Elliot/Data/kili/KM_EPSG32737_SEN2_L3_BOA_NDV_2017_FBM.tif")
+# kili <- rast("/home/matteo/own_data/PoD/hackathon/Elliot/Data/kili/KM_EPSG32737_SEN2_L3_BOA_NDV_2017_FBM.tif")
+kili <- rast("F:/Elliot Shayle/Kilimanjaro Geodata/KM_EPSG32737_SEN2_L3_BOA_NDV_2017_FBM.tif")
 kili.100 <- aggregate(kili, fact=100, fun="mean")
 kili.100Mean <- mean(kili.100) 
 
-#P: No error; user time elapsed 2.333 secs with 10 cores
+#P: No error; user time elapsed 2.333 secs with 10 [8 for Elliot's laptop] cores
 system.time(tmp.resultCP <- paRao(
 	kili.100Mean,
 	window = 9,
 	alpha = 2,
 	simplify = 0, 
 	method = "classic",
-	np = 10
+	np = 8
 	))
 
 #S: No error; user time elapsed 2.333 secs with 10 cores
@@ -31,7 +32,7 @@ system.time(tmp.resultCS <- paRao(
 	alpha = 2,
 	simplify = 0, 
 	method = "classic",
-	np = 1
+	np = 8
 	))
 
 par(mfrow=c(3,1))
@@ -41,12 +42,12 @@ plot(tmp.resultCS[[1]][[1]])
 
 #S: No error; user time elapsed 395.614 secs with 20 cores
 system.time(tmp.resultCP <- paRao(
-	kili.mean,
+	kili.100Mean,
 	window = 9,
 	alpha = 2,
 	simplify = 0, 
 	method = "classic",
-	np = 1
+	np = 8
 	))
 
 time_vector <- 1:12
@@ -61,7 +62,7 @@ system.time(tmp.resultTD <- paRao(
 	time_vector = time_vector,
 	cycle_length = "year",
 	time_scale = "month",
-	np = 20,
+	np = 8,
 	progBar=TRUE
 	))
 

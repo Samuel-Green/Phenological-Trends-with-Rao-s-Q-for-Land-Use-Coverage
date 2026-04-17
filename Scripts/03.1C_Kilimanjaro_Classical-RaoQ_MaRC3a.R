@@ -1,5 +1,5 @@
 ###############################################################################
-# 03.1A_Kilimanjaro_Classical-RaoQ_MaRC3a
+# 03.1C_Kilimanjaro_Classical-RaoQ_MaRC3a
 # Processes ONE tile for classical Rao's Q
 ###############################################################################
 
