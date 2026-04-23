@@ -227,267 +227,6 @@ plot(Knepp.full.dates, Knepp_Timeseries_Mean.NDVI[,1],
 
 dev.off() # This actually exports the plot to the file
 
-# #### Diversity analyses: ####
-# ### 1. Shannon-Wiener Index ####
-# # Shannon's H is first applied to the collapsed timeseries of data
-# 
-# message("Calculating Shannon-Wiener diversity index...")
-# 
-# Knepp_NDVI_Mean_Raster <- app(Knepp_Timeseries.NDVI, fun = mean, na.rm = TRUE) # This takes all raster layers, and computes the mean pixel value based on all available layers
-# 
-# # Round to 2 decimals to avoid numerical saturation
-# 
-# Knepp_NDVI_Mean_Raster2dec <- round(Knepp_NDVI_Mean_Raster, 2)
-# 
-# # Calculate Shannon with moving window = 3
-# 
-# Knepp.NDVI.ShannonH.matrix <- rasterdiv::ShannonS(
-#   x = terra::as.matrix(Knepp_NDVI_Mean_Raster2dec, wide = TRUE),
-#   window = 3,
-#   na.tolerance = 0
-# )
-# 
-# ## Now turn the matrix of Shannon H values into a spatial raster
-# # Put it in a raster signature
-# 
-# Knepp_NDVI_ShannonH_Raster <- rast(Knepp.NDVI.ShannonH.matrix)
-# 
-# # Make the raster's extent and CRS match the original raster
-# 
-# ext(Knepp_NDVI_ShannonH_Raster) <- ext(Knepp_NDVI_Mean_Raster2dec)
-# crs(Knepp_NDVI_ShannonH_Raster) <- crs(Knepp_NDVI_Mean_Raster2dec)
-# 
-# names(Knepp_NDVI_ShannonH_Raster) <- "Shannon's H (Derived from NDVI)"
-# 
-# # Export the raster
-# 
-# writeRaster(
-#   Knepp_NDVI_ShannonH_Raster,
-#   filename = file.path(Knepp_Results, "Knepp_Estate_NDVI_ShannonH_Raster.tif"),
-#   overwrite = TRUE
-# )
-# 
-# ### 2. Classic Rao's Q  ####
-# 
-# message("Calculating classical Rao's Q...")
-# 
-# ## This function calculates parametric Rao's Q
-# # This version calculates "classic" Rao's Q on only one matrix
-# # The subsequent multidimensional paRao will be used to calculate TWDTW Rao's Q
-# 
-# Knepp_NDVI_Classic_RaoQ <- paRao(
-#   x = Knepp_NDVI_Mean_Raster, # This also uses the mean of NDVI throughout time (i.e., all 146 observations are averaged into 1)
-#   window = 3,
-#   alpha = 2,
-#   na.tolerance = 0,
-#   simplify = 2,
-#   method = "classic"
-# )
-# 
-# # This function exports my object as a GeoTIF for viewing in QGIS etc.
-# 
-# writeRaster(
-#   Knepp_NDVI_Classic_RaoQ$window.3$alpha.2, # Subsets to just the spatial raster (as far as I can tell)
-#   filename = file.path(Knepp_Results, "Knepp_Estate_NDVI_Classic-RaoQ_Raster.tif"),
-#   overwrite = TRUE
-# )
-# 
-# ### 3. Rao's Q with TWDTW ####
-# ## Parameters are copied from the Hackathon preprint
-# 
-# message("Calculating Rao's Q with TWDTW distance...")
-# 
-# # If the function is taking too long to compute, make sure to enable parallelisation
-# # For running on an HPC with unknown cores, I can use the function `parallel::detectCores()`
-# # And set the "np" argument to detectCores() - 1
-# # Also requires the package 'snow' to parallelise, so I've disabled it for now
-# 
-# Knepp_NDVI_TWDTW_RaoQ <- paRao(
-#   x = Knepp_Timeseries,
-#   time_vector = Knepp_Time,
-#   window = 3,
-#   alpha = 2,
-#   na.tolerance = 0,
-#   simplify = 2,
-#   np = 6, # Number of cores to use (I'd rather not wait forever)
-#   progBar = TRUE,
-#   method = "multidimension",
-#   dist_m = "twdtw",
-#   midpoint = 6, # This is not the midpoint of the vector, rather the ecological midpoint of the cycle
-#   stepness = -0.5, # I just noticed, shouldn't the α value be called "steepness" instead of "stepness"?
-#   cycle_length = "year",
-#   time_scale = "month" # this specifies that our midpoint, 35, occurs after 35 days
-# )
-# 
-# # This function exports my object as a GeoTIF for viewing in QGIS etc.
-# 
-# writeRaster(
-#   Knepp_NDVI_TWDTW_RaoQ$window.3$alpha.2,
-#   filename = file.path(Knepp_Results, "Knepp_Estate_NDVI_TWDTW-RaoQ_Raster.tif"),
-#   overwrite = TRUE
-# )
-# 
-# ### Export rasters for comparison as a stacked GeoTIF ####
-# ## Stack outputs for easy visual comparison (as in Figure 3 of the Hackathon preprint)
-# # Combine all my rasters into one list object
-# 
-# Knepp_NDVI_Index_Comparison_Rasters <- c(
-#   Knepp_NDVI_Mean_Raster, # The mean of per pixel NDVI for straightforward visual analysis
-#   Knepp_NDVI_ShannonH_Raster,
-#   Knepp_NDVI_Classic_RaoQ$window.3$alpha.2,
-#   Knepp_NDVI_TWDTW_RaoQ$window.3$alpha.2
-# ) # This previously contained the NDVI raster, but I've decided to recompute in a separate file
-# 
-# # Name each layer
-# 
-# names(Knepp_NDVI_Index_Comparison_Rasters) <- c(
-#   "Landsat Mean NDVI",
-#   "Shannon's H (NDVI Derived)",
-#   "Classic Rao's Q (NDVI Derived)",
-#   "TWDTW Rao's Q (NDVI Derived)"
-# )
-# 
-# # Export it for later viewing and observation in QGIS
-# 
-# writeRaster(
-#   Knepp_NDVI_Index_Comparison_Rasters,
-#   filename = file.path(Knepp_Results, "Knepp_Estate_NDVI_Diversity_Comparison.tif"),
-#   overwrite = TRUE
-# )
-# 
-# png(file.path(Knepp_Results, "Knepp_Estate_NDVI_Indices_Comparison.png"),
-#     width = 2560, height = 1440, res = 150)
-# 
-# plot(Knepp_NDVI_Index_Comparison_Rasters) # A nice comparison plot
-# 
-# dev.off()
-# 
-# ### Assess and compare each index's performance ####
-# ## Firstly, import the shape file of land cover classification
-# # Path to the land cover classification shapefile from Matteo
-# 
-# Knepp.land.cover.file <- file.path(Knepp_Input, "Knepp_Data_From_Matteo/KneppEstate_Shapefile/KneppEstate_32632.shp")
-# 
-# # Read vector landcover
-# 
-# KneppEstate_LandCover_Vector <- vect(Knepp.land.cover.file)
-# 
-# # Ensure CRS matches diversity rasters
-# 
-# if (crs(Knepp_NDVI_Index_Comparison_Rasters) != crs(KneppEstate_LandCover_Vector)){
-#   message("The shapefile's CRS differs from the diversity index raster's CRS")
-#   KneppEstate_LandCover_Vector <- project(KneppEstate_LandCover_Vector, crs(Knepp_NDVI_Index_Comparison_Rasters)) # reprojects the shapefile if CRSs differ
-# } else {message("The shapefile's CRS matches the diversity index raster's CRS")}
-# 
-# ## The rasters exceed the boundaries of the shapefile, so they will be cropped to size
-# # Crop to polygon extent
-# 
-# cropped.Knepp_NDVI_ShannonH_Raster <- crop(Knepp_NDVI_ShannonH_Raster, KneppEstate_LandCover_Vector)
-# cropped.Knepp_NDVI_Classic_RaoQ <- crop(Knepp_NDVI_Classic_RaoQ$window.3$alpha.2, KneppEstate_LandCover_Vector)
-# cropped.Knepp_NDVI_TWDTW_RaoQ <- crop(Knepp_NDVI_TWDTW_RaoQ$window.3$alpha.2, KneppEstate_LandCover_Vector)
-# 
-# # Mask outside polygon
-# 
-# masked.Knepp_NDVI_ShannonH_Raster <- mask(cropped.Knepp_NDVI_ShannonH_Raster, KneppEstate_LandCover_Vector)
-# masked.Knepp_NDVI_Classic_RaoQ <- mask(cropped.Knepp_NDVI_Classic_RaoQ, KneppEstate_LandCover_Vector)
-# masked.Knepp_NDVI_TWDTW_RaoQ <- mask(cropped.Knepp_NDVI_TWDTW_RaoQ, KneppEstate_LandCover_Vector)
-# 
-# ## Make land cover classes rasterised instead of vectorised
-# # Firstly, I need to give each polygon/vector within the spatial vector a proper category label
-# # (currently, it's just a number corresponding to which description it is)
-# 
-# KneppEstate_LandCover_Vector$CAT <- KneppEstate_LandCover_Vector$decsr
-# 
-# # This defines a new raster object with the dominant land cover type as the dominant pixel value
-# 
-# KneppEstate_LandCover_Raster <- rasterize(
-#   KneppEstate_LandCover_Vector,
-#   masked.Knepp_NDVI_ShannonH_Raster,
-#   field = "CAT"
-# )
-# 
-# plot(KneppEstate_LandCover_Raster) # Looks cool
-# 
-# ## Put the pixel values into a dataframe for easier computation
-# # Firstly, stack the spatial rasters into one object with vegetation class
-# 
-# masked.Knepp_NDVI_Index_Comparison_Rasters <- c(
-#   masked.Knepp_NDVI_ShannonH_Raster,
-#   masked.Knepp_NDVI_Classic_RaoQ,
-#   masked.Knepp_NDVI_TWDTW_RaoQ,
-#   KneppEstate_LandCover_Raster
-# )
-# 
-# # Rename the different layers of the spatial raster to something more memorable
-# 
-# names(masked.Knepp_NDVI_Index_Comparison_Rasters) <- c(
-#   "ShannonH (NDVI Derived)",
-#   "Rao's Q Classic (NDVI Derived)",
-#   "Rao's Q TWDTW (NDVI Derived)",
-#   "Vegetation Ground Truth"
-# )
-# 
-# # Convert the spatial raster to dataframe
-# 
-# masked.Knepp_NDVI_Index_Comparison_DF <- as.data.frame(masked.Knepp_NDVI_Index_Comparison_Rasters, na.rm = TRUE)
-# 
-# # Ensure vegetation is treated as factor [It is so I've disabled this line]
-# # 
-# # masked.Knepp_NDVI_Index_Comparison_DF$Vegetation <- as.factor(masked.Knepp_NDVI_Index_Comparison_DF$Vegetation)
-# 
-# # Rename the column names because otherwise R gets fussy
-# 
-# colnames(masked.Knepp_NDVI_Index_Comparison_DF) <- c(
-#   "ShannonH",
-#   "RaosQ_Classic",
-#   "RaosQ_TWDTW",
-#   "Veg_GroundTruth"
-# )
-# 
-# ## Run the PERMANOVA
-# # How much variance in each index is explained by each vegetation class?
-# 
-# Knepp_NDVI_PERMANOVA_Shannon <- adonis2(
-#   masked.Knepp_NDVI_Index_Comparison_DF$ShannonH ~ 
-#     masked.Knepp_NDVI_Index_Comparison_DF$Veg_GroundTruth,
-#   permutations = 9999
-# )
-# 
-# Knepp_NDVI_PERMANOVA_RaosQ_Classic <- adonis2(
-#   masked.Knepp_NDVI_Index_Comparison_DF$RaosQ_Classic ~ 
-#     masked.Knepp_NDVI_Index_Comparison_DF$Veg_GroundTruth,
-#   permutations = 9999
-# )
-# 
-# Knepp_NDVI_PERMANOVA_RaosQ_TWDTW <- adonis2(
-#   masked.Knepp_NDVI_Index_Comparison_DF$RaosQ_TWDTW ~ 
-#     masked.Knepp_NDVI_Index_Comparison_DF$Veg_GroundTruth,
-#   permutations = 9999
-# )
-# 
-# ## Extract R² and p-values
-# 
-# KneppEstate_NDVI_PERMANOVA_Results <- data.frame(
-#   Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
-#   R2 = c(
-#     Knepp_NDVI_PERMANOVA_Shannon$R2[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_Classic$R2[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_TWDTW$R2[1]
-#   ),
-#   `F` = c(
-#     Knepp_NDVI_PERMANOVA_Shannon$F[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_Classic$F[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_TWDTW$F[1]
-#   ),
-#   p_value = c(
-#     Knepp_NDVI_PERMANOVA_Shannon$`Pr(>F)`[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
-#     Knepp_NDVI_PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
-#   )
-# )
-# 
-# print(KneppEstate_NDVI_PERMANOVA_Results)
-
 ### Single year diversity analyses ####
 ## I have CEH land-cover data for 2000, 2007, 2015, and 2020
 ## To fairly compare the indices, I'm subsetting the spatial raster to those years
@@ -508,60 +247,6 @@ Knepp_NDVI_YoI <- lapply(YoI, function(y) {
 # Name the list elements
 
 names(Knepp_NDVI_YoI) <- YoI
-
-# ### Clean the dataset so that only pixels with complete data across all layers are retained ####
-# ## First, a brief visual overview of the data
-# # This is optional, but it can be helpful to understand the data before applying the cleaning function
-# 
-# for(i in 1:nlyr(Knepp_NDVI_YoI[[4]])) {
-#   plot(Knepp_NDVI_YoI[[4]][[i]], main = names(Knepp_NDVI_YoI[[4]])[i])
-#   if(i < nlyr(Knepp_NDVI_YoI[[4]])) readline(prompt = "Press [enter] to continue")
-# }
-# 
-# # TEMPORARY line to drop 2 dodgy layers from the 2015 stack (these layers have >90% NA values, which is a problem for the subsequent analyses)
-# 
-# Knepp_NDVI_YoI[[3]] <- Knepp_NDVI_YoI[[3]][[1:10]]
-# 
-# # Now a function to create a mask of pixels with complete data across all layers, and apply it to the stack 
-# 
-# Knepp_NDVI_YoI_Clean <- mapply(function(r_stack, y) {
-#   
-#   message("Processing year: ", y)
-#   
-#   message("Creating complete-case mask...")
-#   
-#   # TRUE where all layers are non-NA
-#   
-#   pixel_mask <- app(r_stack, function(x) all(!is.na(x)))
-#   
-#   message("Applying mask...")
-#   
-#   r_clean <- mask(r_stack, pixel_mask, maskvalues = 0)
-#   
-#   ## Save cleaned rasters
-#   
-#   out_path <- file.path(
-#     Knepp_Processed,
-#     paste0("Knepp_Buffered_NDVI_", y, "_Clean.tif")
-#   )
-#   
-#   message("Writing cleaned raster to disk: ", out_path)
-#   
-#   writeRaster(
-#     r_clean,
-#     filename = out_path,
-#     overwrite = TRUE
-#   )
-#   
-#   return(r_clean)
-#   
-# }, Knepp_NDVI_YoI, names(Knepp_NDVI_YoI), SIMPLIFY = FALSE)
-
-## Load  back in these rasters instead, if necessary and previously computed
-
-# Knepp_NDVI_YoI_Clean <- lapply(YoI, function(y) {
-#   rast(file.path(Knepp_Processed, paste0("Knepp_Buffered_NDVI_", y, "_Clean.tif")))
-# })
 
 ### Compute the Shannon-Wiener Index for each year ####
 ## Define a Shannon's H function
@@ -627,11 +312,28 @@ Knepp_NDVI_ShannonH_YoI <- mapply(
 
 # Load them back in again if necessary
 
+message("Loading Shannon's H rasters from disk...")
+
+# Loop over the Years of Interest (YoI) using 'y' as the iterator
+
 Knepp_NDVI_ShannonH_YoI <- lapply(YoI, function(y) {
-  rast(file.path(Knepp_Results, paste0("Knepp_", year,"_NDVI_ShannonH.tif")))
+  
+  # Ensure we use 'y' to construct the file string, not 'year'
+  
+  tmp.file.path <- file.path(Knepp_Results, paste0("Knepp_", y, "_NDVI_ShannonH.tif"))
+  
+  # Import the raster
+  
+  tmp.imported.ShannonH.raster <- rast(tmp.file.path)
+  
+  return(tmp.imported.ShannonH.raster)
 })
 
+# Name the elements of the list so you can call them by year (e.g., Knepp_NDVI_ShannonH_YoI[["2000"]])
+
 names(Knepp_NDVI_ShannonH_YoI) <- YoI
+
+message("Shannon's H rasters successfully loaded.")
 
 ### Mosaic tiles for export and parallelisation on HPC (MaRC3a) ####
 ## Due to the size of the site and the need to run concurrently on 4 discrete years of data
@@ -846,85 +548,6 @@ Knepp_NDVI_TWDTW_Rao_YoI <- lapply(YoI, function(y) {
 })
 
 names(Knepp_NDVI_TWDTW_Rao_YoI) <- YoI
-
-# ## Now I must compute Shannon's H and both Rao's Qs for each of those yearly rasters
-# # To keep the code neat, here's a function which uses the `rasterdiv` functions to compute these
-# 
-# Knepp_NDVI_YearlyDiversityIndices <- function(r_stack, time_vector) {
-# 
-#   ## Mean NDVI (collapse time)
-# 
-#   mean_ndvi <- app(r_stack, mean, na.rm = TRUE)
-# 
-#   # Round to avoid Shannon saturation
-# 
-#   mean_ndvi_2dec <- round(mean_ndvi, 2)
-# 
-#   ## Compute Shannon's H
-#   # This follows the same structure as elsewhere in this script
-# 
-#   shannon_mat <- rasterdiv::ShannonS(
-#     x = terra::as.matrix(mean_ndvi_2dec, wide = TRUE),
-#     window = 3,
-#     na.tolerance = 0
-#   )
-# 
-#   shannon_rast <- rast(shannon_mat)
-#   ext(shannon_rast) <- ext(mean_ndvi_2dec)
-#   crs(shannon_rast) <- crs(mean_ndvi_2dec)
-# 
-#   ## Classic Rao's Q
-#   # `simplify = 2`, equivalent to 2 decimal places
-# 
-#   rao_classic <- paRao(
-#     x = mean_ndvi,
-#     window = 3,
-#     alpha = 2,
-#     na.tolerance = 0,
-#     simplify = 2,
-#     method = "classic"
-#   )$window.3$alpha.2
-# 
-#   ## TWDTW Rao's Q (uses full time series)
-#   # `simplify = 2`, equivalent to 2 decimal places
-# 
-#   rao_twdtw <- paRao(
-#     x = r_stack,
-#     time_vector = time_vector,
-#     window = 3,
-#     alpha = 2,
-#     na.tolerance = 0,
-#     simplify = 2,
-#     method = "multidimension",
-#     dist_m = "twdtw",
-#     midpoint = 6,
-#     stepness = -0.5,
-#     cycle_length = "year",
-#     time_scale = "month"
-#   )$window.3$alpha.2
-# 
-#   ## Return everything nicely bundled
-# 
-#   return(list(
-#     Knepp_Mean_NDVI = mean_ndvi,
-#     Knepp_NDVI_ShannonsH = shannon_rast,
-#     Knepp_NDVI_Classic_RaoQ = rao_classic,
-#     Knepp_NDVI_TWDTW_RaoQ = rao_twdtw
-#   ))
-# }
-# 
-# ## And now I apply this newly defined function to each year of Knepp Estate data
-# # This function goes over each year in the raster stack and computes the indices
-# 
-# Knepp_Indices_YoI.NDVI_derived <- lapply(names(Knepp_NDVI_YoI), function(y) {
-# 
-#   r <- Knepp_NDVI_YoI[[y]]
-#   t <- Knepp_Time[Knepp.years == y]
-# 
-#   Knepp_NDVI_YearlyDiversityIndices(r, t)
-# })
-# 
-# names(Knepp_Indices_YoI.NDVI_derived) <- names(Knepp_NDVI_YoI)
 
 ### Comparison to land cover data ####
 ## Load and process the land cover maps from the UK's Centre for Ecology and Hydrology
