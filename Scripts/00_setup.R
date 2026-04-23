@@ -21,6 +21,9 @@ install.packages("parallel")
 install.packages("pROC")
 remotes::install_github("mitmat/ppi")
 install.packages("ncdf4")
+install.packages("zoo")
+install.packages("pracma")
+install.packages("raster")
 
 ## Load libraries
 
@@ -37,6 +40,9 @@ library(parallel)
 library(pROC)
 library(ppi)
 library(ncdf4)
+library(zoo)
+library(pracma)
+library(raster)
 
 ### Reproducibility settings ####
 
