@@ -1063,19 +1063,22 @@ Knepp_PERMANOVA_YoI.NDVI <- lapply(
       Shannon = adonis2(
         df_subset$ShannonH ~ df_subset$LandCover,
         #data = df_subset, # IDK why, but R cannot find ShannonH unless defined by a $
-        permutations = 9999
+        permutations = 999,
+        parallel = parallel::detectCores() - 2
       ),
       
       Rao_Classic = adonis2(
         RaosQ_Classic ~ LandCover,
         data = df_subset,
-        permutations = 9999
+        permutations = 999,
+        parallel = parallel::detectCores() - 2
       ),
       
       Rao_TWDTW = adonis2(
         RaosQ_TWDTW ~ LandCover,
         data = df_subset,
-        permutations = 9999
+        permutations = 999,
+        parallel = parallel::detectCores() - 2
       )
     )
   }
