@@ -184,7 +184,7 @@ Knepp_Buffered_Timeseries.NDVI.Cleaned <- app( # terra::app() to push the functi
 ## Restore the original layer names (e.g., "2000-01_NDVI")
 # terra::app() stripped the layer names, so they're reassigned from the original object
 
-names(Knepp_Buffered_Timeseries.NDVI.Cleaned) <- names(Knepp_Buffered_Timeseries.NDVI)
+names(Knepp_Buffered_Timeseries.NDVI.Cleaned) <- names(Knepp_Buffered_Timeseries.NDVI) # This only works if missing temporal slices have been inserted
 
 message("Gap-filling complete. Ready for TWDTW analysis.")
 
@@ -346,11 +346,13 @@ for (y in YoI) {
   message("Creating tiles for year: ", y)
   
   # Get rasters
+  
   tmp.r_stack <- Knepp_NDVI_YoI[[y]] # This is the original, uncleaned stack. It will be reactivated when I have gap-filled data
   # tmp.r_stack <- Knepp_NDVI_YoI_Clean[[y]] # This is the cleaned stack, with only pixels with complete data across all layers
   tmp.mean_raster <- app(tmp.r_stack, mean, na.rm = TRUE)
   
   # Trim outer NA borders (important for efficiency)
+  
   tmp.trimmed_mean <- trim(tmp.mean_raster)
   
   ## Create a tiling grid
@@ -642,6 +644,36 @@ Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(
   }
 )
 
+## OPTIONAL: export these rasters so I don't have to recreate them every time I run the script
+# My object is a list of rasters, but not itself a raster, so  I need to export each year separately
+
+for (y in names(Knepp_LandCover_AlignedIndices_YoI.NDVI)) {
+  
+  r <- Knepp_LandCover_AlignedIndices_YoI.NDVI[[y]]
+  
+  out_file <- file.path(
+    Knepp_Results,
+    paste0("Knepp_", y, "_Aligned_Indices_NDVI.tif")
+  )
+  
+  writeRaster(
+    r,
+    filename = out_file,
+    overwrite = TRUE
+  )
+}
+
+## Load the raster back in (if necessary)
+
+Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(YoI, function(y) {
+  
+  rast(
+    file.path(Knepp_Results, paste0("Knepp_", y, "_Aligned_Indices_NDVI.tif"))
+  )
+})
+
+names(Knepp_LandCover_AlignedIndices_YoI.NDVI) <- YoI
+
 ## Now I convert the raster stacks to a dataframe so I can run analyses on them
 # The dataframe will have one row per pixel, and columns for each index and the land cover class
 
@@ -672,7 +704,7 @@ Knepp_PERMANOVA_YoI.NDVI <- lapply(
   Knepp_DF_YoI.NDVI,
   function(df) {
     
-    ##Subsample the dataframe
+    ## Subsample the dataframe
     # Take a random sample of 10,000 rows to prevent distance-matrix memory crashes
     # The min() function acts as a safety net just in case a year has fewer than 10k valid pixels
     
@@ -691,15 +723,15 @@ Knepp_PERMANOVA_YoI.NDVI <- lapply(
       ),
       
       Rao_Classic = adonis2(
-        RaosQ_Classic ~ LandCover,
-        data = df_subset,
+        df_subset$RaosQ_Classic ~ df_subset$LandCover,
+        #data = df_subset,
         permutations = 999,
         parallel = parallel::detectCores() - 2
       ),
       
       Rao_TWDTW = adonis2(
-        RaosQ_TWDTW ~ LandCover,
-        data = df_subset,
+        df_subset$RaosQ_TWDTW ~ df_subset$LandCover,
+        #data = df_subset,
         permutations = 999,
         parallel = parallel::detectCores() - 2
       )
