@@ -74,7 +74,7 @@ KneppEstate_Buffered_Boundaries <- vect(file.path(Knepp_Processed,"Knepp_Estate_
 
 if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Boundaries)){
   Knepp_Buffered_Timeseries.NDVI <- project(Knepp_Buffered_Timeseries.NDVI, crs(KneppEstate_Boundaries))
-  message("The raster's CRS differs from the shape file's CRS")
+  message("The raster was reprojected to match the shape file's CRS")
 } else {message("The raster's CRS already matches the shapefile's CRS")}
 
 ### OPTION 1: Export the dataset as a NetCDF file for Gaussian Processing ####
@@ -122,7 +122,7 @@ sg_gapfill <- function(x) {
   ## Savitzky-Golay Smoothing
   
   x_smoothed <- pracma::savgol(x_interp, 
-                               fl = 11, # fl = Filter length, must be an odd number, and `fl = 11` provides a ~yearly smoothing window, preserving the seasonality
+                               fl = 5, # fl = Filter length, must be an odd number, and `fl = 5` provides a seasonal smoothing window, preserving the seasonality
                                forder = 2) # forder: Filter order (polynomial degree), and 2 or 3 is standard for NDVI
   
   return(x_smoothed)
@@ -337,7 +337,7 @@ message("Shannon's H rasters successfully loaded.")
 
 ### Mosaic tiles for export and parallelisation on HPC (MaRC3a) ####
 ## Due to the size of the site and the need to run concurrently on 4 discrete years of data
-## I will mosaic the dataset into 1000 tiles (similar to the Kili analysis) for later processing on the HPC
+## I will mosaic the dataset into 500 tiles (similar to the Kili analysis) for later processing on the HPC
 
 Knepp_NDVI_tile_info <- list()  # store metadata for later
 
@@ -739,6 +739,8 @@ Knepp_PERMANOVA_YoI.NDVI <- lapply(
   }
 )
 
+saveRDS(Knepp_PERMANOVA_YoI.NDVI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_YoI_NDVI.rds"))
+
 # Finally, putting the results into their own dataframe
 
 Knepp_PERMANOVA_Summary.NDVI <- do.call(rbind, lapply(
@@ -768,5 +770,7 @@ Knepp_PERMANOVA_Summary.NDVI <- do.call(rbind, lapply(
     )
   }
 ))
+
+saveRDS(Knepp_PERMANOVA_Summary.NDVI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_Summary_NDVI.rds"))
 
 message("Knepp Estate NDVI analysis complete.") # End of script ####
