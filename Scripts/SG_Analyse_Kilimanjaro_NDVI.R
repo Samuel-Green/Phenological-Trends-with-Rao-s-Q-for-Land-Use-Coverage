@@ -1,18 +1,17 @@
 ############################################################################ ###
-# Elliot Samuel Shayle - University of Marburg - 24/02/2026                    #
-# 03_Analyse_Kilimanjaro_NDVI.R                                                #
+# Elliot Samuel Shayle - University of Marburg - 06/05/2026                    #
+# SG_Analyse_Kilimanjaro.R                                                     #
 # Conducting comparative analysis of TWDTW Rao's Q and classic Rao's Q in Kili #
+# AMENDED: Full-Dataset Savitzky-Golay Gap Filling & Smoothing (fl = 5)        #
 ############################################################################ ###
-
-### Install and load the necessary packages ####
-## This should already be done from the setup file
-# rasterdiv now contains the TWDTW-enabled paRao()
 
 library(rasterdiv)
 library(twdtw)
 library(vegan)
 library(pROC)
 library(terra)
+library(zoo)     # Added for na.approx
+library(pracma)  # Added for savgol
 
 # Core spatial stack already loaded in 00_setup.R:
 # terra, sf, here, dplyr, stringr
@@ -22,10 +21,14 @@ library(terra)
 
 # Output directory for this script
 
-KiliNP_Results <- file.path(Results, "Kilimanjaro")
-dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
+# Output directories for the SG smoothed script
+SG_KiliNP_Results <- file.path(Results, "Kilimanjaro_SG_Test")
+dir.create(SG_KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 
-# Load KiliNP_LandCover_Vector boundary (this is our land cover ground truth data)
+SG_KiliNP_Processed <- file.path(ProcessedData, "Kilimanjaro_SG_Test")
+dir.create(SG_KiliNP_Processed, showWarnings = FALSE, recursive = TRUE)
+
+# Load KiliNP_LandCover_Vector boundary (this is our land cover ground truth data and also our area of interest)
 
 KiliNP_LandCover_Vector <- 
   vect(file.path(KiliNP_Input,
@@ -60,7 +63,7 @@ for (f in tmp.files) {
   # Write to processed folder
   writeRaster(
     tmp.KiliNP.raster.masked,
-    filename = file.path(KiliNP_Processed, tmp.new.name),
+    filename = file.path(SG_KiliNP_Processed, tmp.new.name),
     overwrite = TRUE
   )
 }
@@ -73,7 +76,7 @@ rm(tmp.KiliNP.raster, tmp.KiliNP.raster.cropped, tmp.KiliNP.raster.masked)
 # Get the files's names and locations
 
 KiliNP_Cropped_Files <- list.files(
-  KiliNP_Processed,
+  SG_KiliNP_Processed,
   pattern = "^KiliNP_\\d{4}_Cropped\\.tif$",
   full.names = TRUE
 )
@@ -97,34 +100,38 @@ Kili.layer.names <- unlist(lapply(Kili.years, function(y) {
 
 names(KiliNP_Timeseries) <- Kili.layer.names
 
-### Mask pixels in the raster stack which don't have a complete timeseries of data
+### AMENDMENT: Gap-filling and smoothing the dataset with Savitzky-Golay filter ####
+# This replaces the strict NA masking block to recover the "swiss cheese" pixels
 
-# Check which layers are completely NA with a quick visual inspection
+message("Gap filling and smoothing the dataset...")
 
-blank_layers <- for(i in 1:nlyr(KiliNP_Timeseries)) {
-  plot(KiliNP_Timeseries[[i]], main = names(KiliNP_Timeseries)[i])
-  if(i < nlyr(KiliNP_Timeseries)) readline(prompt = "Press [enter] to continue")
+sg_gapfill <- function(x) {
+  # If the pixel is completely outside the mountain boundary (100% NA), leave it as NA
+  if (all(is.na(x))) { 
+    return(rep(NA, length(x))) 
+  }
+  
+  # Linear Interpolation to bridge the occasional cloud gaps
+  x_interp <- zoo::na.approx(x, na.rm = FALSE, rule = 2) 
+  
+  # Savitzky-Golay Smoothing (fl = 5 for monthly data)
+  x_smoothed <- pracma::savgol(x_interp, fl = 5, forder = 2) 
+  
+  return(x_smoothed) # Returning the fully homogenised, gap-filled data
 }
 
-blank_layers # This is just to inspect each layer for the user's interest
+# Apply directly to the RAW timeseries, bypassing the strict masking
+KiliNP_Timeseries_SG <- app(
+  KiliNP_Timeseries, 
+  fun = sg_gapfill, 
+  cores = detectCores() - 2
+)
 
-## Only pixels with a complete set of data for every layer are suitable for analysis
-# There are many pixels with NA values scattered throughout the raster stack
-# Create logical mask: TRUE only where ALL layers are non-NA
+names(KiliNP_Timeseries_SG) <- Kili.layer.names
 
-Kili.pixel.mask <- app(KiliNP_Timeseries, function(x) all(!is.na(x))) # Will consume lots of RAM
-
-# Mask out incomplete pixels (FALSE becomes NA)
-
-KiliNP_Timeseries_Clean <- mask(KiliNP_Timeseries, Kili.pixel.mask, maskvalues = 0) # This is very computationally challenging, run on HPC
-
-# Export raster so I don't have to calculate it every time
-
-writeRaster(KiliNP_Timeseries_Clean, file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
-
-# And then load back in the raster
-
-KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif")) # Load it in
+# Export and reload the newly rescued, smoothed spatial stack
+writeRaster(KiliNP_Timeseries_SG, file.path(SG_KiliNP_Processed, "KiliNP_SG_2017-2021_Cropped.tif"), overwrite = TRUE)
+KiliNP_Timeseries_SG <- rast(file.path(SG_KiliNP_Processed, "KiliNP_SG_2017-2021_Cropped.tif"))
 
 ### Inspect temporal structure ####
 
@@ -136,18 +143,18 @@ message("Constructing time vector for Kilimanjaro time series...")
 # Extract year and month from layer names
 # Layer format: "2017 - January"
 
-#Kili.layer.names <- names(KiliNP_Timeseries_Clean)
+#Kili.layer.names <- names(KiliNP_Timeseries_SG)
 
 Kili.dates <- as.Date(
   paste0(
-    sub(" - .*", "", names(KiliNP_Timeseries_Clean)), "-",
-    match(sub(".* - ", "", names(KiliNP_Timeseries_Clean)), month.name),
+    sub(" - .*", "", names(KiliNP_Timeseries_SG)), "-",
+    match(sub(".* - ", "", names(KiliNP_Timeseries_SG)), month.name),
     "-01"
   ),
   format = "%Y-%m-%d"
 )
 
-stopifnot(length(Kili.dates) == nlyr(KiliNP_Timeseries_Clean))
+stopifnot(length(Kili.dates) == nlyr(KiliNP_Timeseries_SG))
 
 message(paste("Temporal length:", length(Kili.dates), "layers"))
 
@@ -156,15 +163,15 @@ message(paste("Temporal length:", length(Kili.dates), "layers"))
 
 message("Calculating Shannon-Wiener diversity index for Kilimanjaro...")
 
-KiliNP_Mean_Raster <- app(KiliNP_Timeseries_Clean, fun = mean, na.rm = TRUE)
+KiliNP_Mean_Raster <- app(KiliNP_Timeseries_SG, fun = mean, na.rm = TRUE)
 
 # Export raster so I don't have to calculate it every time
 
-writeRaster(KiliNP_Mean_Raster, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif"), overwrite = TRUE)
+writeRaster(KiliNP_Mean_Raster, file.path(SG_KiliNP_Processed, "KiliNP_SG_MeanNDVI_Cropped_&_Masked.tif"), overwrite = TRUE)
 
 # And then load back in the raster
 
-KiliNP_Mean_Raster <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped_&_Masked.tif")) # Load it in
+KiliNP_Mean_Raster <- rast(file.path(SG_KiliNP_Processed, "KiliNP_SG_MeanNDVI_Cropped_&_Masked.tif")) # Load it in
 
 # Round to 2 decimals to avoid numerical saturation
 
@@ -173,8 +180,8 @@ KiliNP_Mean_Raster2dec <- trim(KiliNP_Mean_Raster2dec) # Trimming it to avoid un
 
 # Export and reload the rounded raster so I don't have to calculate it every time
 
-writeRaster(KiliNP_Mean_Raster2dec, file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif"), overwrite = TRUE)
-KiliNP_Mean_Raster2dec <- rast(file.path(KiliNP_Processed, "KiliNP_MeanNDVI_Cropped-Masked-Rounded2DP.tif")) # Load it back in
+writeRaster(KiliNP_Mean_Raster2dec, file.path(SG_KiliNP_Processed, "KiliNP_SG_MeanNDVI_Cropped-Masked-Rounded2DP.tif"), overwrite = TRUE)
+KiliNP_Mean_Raster2dec <- rast(file.path(SG_KiliNP_Processed, "KiliNP_SG_MeanNDVI_Cropped-Masked-Rounded2DP.tif")) # Load it back in
 
 # Run ShannonS
 
@@ -200,11 +207,11 @@ names(KiliNP_ShannonH_Raster) <- "Shannon's H"
 
 writeRaster(
   KiliNP_ShannonH_Raster,
-  filename = file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif"),
+  filename = file.path(SG_KiliNP_Results, "Kilimanjaro_SG_2017-2021_ShannonH_raster.tif"),
   overwrite = TRUE
 )
 
-KiliNP_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_2017-2021_ShannonH_raster.tif")) # Load it back in
+KiliNP_ShannonH_Raster <- rast(file.path(SG_KiliNP_Results, "Kilimanjaro_SG_2017-2021_ShannonH_raster.tif")) # Load it back in
 
 ### 2. Classic Rao's Q  ####
 ## Due to the large size of the raster, I need to tile it so that it can be run
@@ -262,9 +269,9 @@ kili.tiling.grid <- as.polygons(
   )
 )
 
-writeVector(kili.tiling.grid, file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON"), filetype = "GeoJSON" , overwrite = TRUE) # Export for later use
+writeVector(kili.tiling.grid, file.path(SG_KiliNP_Processed, "KiliNP_SG_Tiling_Grid_Polygons.geoJSON"), filetype = "GeoJSON" , overwrite = TRUE) # Export for later use
 
-kili.tiling.grid <- vect(file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON")) # Load it back in
+kili.tiling.grid <- vect(file.path(SG_KiliNP_Processed, "KiliNP_SG_Tiling_Grid_Polygons.geoJSON")) # Load it back in
 
 plot(kili.tiling.grid) # Plot it to make sure that it's loaded in
 
@@ -275,8 +282,8 @@ kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
 # Create a directory to put the tiles in
 
-#kili.tile.dir <- file.path(KiliNP_Processed,"Mean NDVI tiles") # I disabled this line so I don't overwrite my 72 larger tiles
-kili.tile.dir <- file.path(KiliNP_Processed,"Tiny tiles")
+#kili.tile.dir <- file.path(SG_KiliNP_Processed,"Mean NDVI tiles") # I disabled this line so I don't overwrite my 72 larger tiles
+kili.tile.dir <- file.path(SG_KiliNP_Processed,"SG_tiles")
 dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Finally, create the tiles
@@ -285,7 +292,7 @@ kili.tiles <- makeTiles(
   trimmed.KiliNP_Mean_Raster, # Trimmed for easier computation
   y = kili.tiling.grid, # Specifies how the tiles should be allocated
   buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
-  filename = file.path(kili.tile.dir, "KiliNP_MeanNDVI_Tile-.tif"),
+  filename = file.path(kili.tile.dir, "KiliNP_SG_MeanNDVI_Tile-.tif"),
   overwrite = TRUE
 )
 
@@ -293,7 +300,7 @@ kili.tiles <- makeTiles(
 ## Firstly, I need to setup the environment for parallelisation
 # Create a subfolder to store the classic Rao's Q output tiles
 
-kili.rao.dir  <- file.path(kili.tile.dir, "rao-utputs") 
+kili.rao.dir  <- file.path(kili.tile.dir, "SG_MeanNDVI_Rao-utputs") 
 dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
 
 ## Create a computing cluster to parallelise the calculation at the tile level
@@ -303,7 +310,7 @@ kili.cores <- max(1, detectCores() - 2)
 
 # Initialise a log file so I can actually see what's going on
 
-kili.log.file <- file.path(kili.rao.dir, "KiliNP_RaoQ_processing_log.txt")
+kili.log.file <- file.path(kili.rao.dir, "KiliNP_SG_RaoQ_processing_log.txt")
 
 # If the log file doesn't exist already, create one
 
@@ -329,7 +336,7 @@ clusterExport(kili.cluster, c(
 
 tile.outputs <- file.path(
   kili.rao.dir,
-  paste0("KiliNP_Classic-RaoQ_Tile-", seq_along(kili.tiles), ".tif")
+  paste0("KiliNP_SG_Classic-RaoQ_Tile-", seq_along(kili.tiles), ".tif")
 )
 
 tiles.to.process <- which(!file.exists(tile.outputs))
@@ -361,15 +368,15 @@ kili.classic.rao.results <- parLapply( # Function call
     
     out.file <- file.path(
       kili.rao.dir,
-      paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
+      paste0("KiliNP_SG_Classic-RaoQ_Tile-", i, ".tif")
     )
     
     if(file.exists(out.file)){
-      log_msg(paste0("Tile", i, "already exists — skipped"))
+      log_msg(paste0("Tile №", i, " already exists and was thus skipped."))
       return(NULL)
     }
     
-    log_msg(paste("Tile", i, "STARTED"))
+    log_msg(paste("Tile №", i, " started!"))
     
     tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
     
@@ -416,7 +423,7 @@ for(i in seq_along(kili.tiles)){
   
   out.file <- file.path(
     kili.rao.dir,
-    paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
+    paste0("KiliNP_SG_Classic-RaoQ_Tile-", i, ".tif")
   )
   
   # Skip tiles which already exist (prevents recomputation)
@@ -478,11 +485,11 @@ KiliNP_Classic_RaoQ <- terra::mosaic(kili.rao.tiles)
 
 writeRaster(
   KiliNP_Classic_RaoQ,
-  file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ.tif"),
+  file.path(SG_KiliNP_Results, "Kilimanjaro_SG_Classic-RaoQ.tif"),
   overwrite = TRUE
 )
 
-KiliNP_Classic_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ.tif")) # Load in the raster
+KiliNP_Classic_RaoQ <- rast(file.path(SG_KiliNP_Results, "Kilimanjaro_SG_Classic-RaoQ.tif")) # Load in the raster
 
 plot(KiliNP_Classic_RaoQ) # Plot it! (Good for data exploration and checking that the raster loaded in as normal)
 
@@ -496,16 +503,16 @@ message("Calculating Rao's Q with TWDTW distance for Kilimanjaro...")
 
 # Create a directory to put the tiles in
 
-kili.twdtw.rao.dir <- file.path(KiliNP_Processed,"Timeseries NDVI tiles")
-dir.create(kili.twdtw.tile.dir, recursive = TRUE, showWarnings = FALSE)
+kili.twdtw.rao.dir <- file.path(SG_KiliNP_Processed,"Timeseries_SG_NDVI_tiles")
+dir.create(kili.twdtw.rao.dir, recursive = TRUE, showWarnings = FALSE)
 
 # Create the timeseries tiles
 
 kili.twdtw.tiles <- makeTiles(
-  trim(KiliNP_Timeseries_Clean), # Trimmed for easier computation
+  trim(KiliNP_Timeseries_SG), # Trimmed for easier computation
   y = kili.tiling.grid, # Make sure this is still loaded in from the previous step!
   buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
-  filename = file.path(kili.tile.dir, "KiliNP_2017-2021_NDVI_Tile-.tif"),
+  filename = file.path(kili.twdtw.rao.dir, "KiliNP_SG_2017-2021_NDVI_Tile-.tif"),
   overwrite = TRUE
 )
 
@@ -515,7 +522,7 @@ kili.twdtw.tiles <- makeTiles(
 
 ######### Beginning of not actually used section
 # Kili_Rao_TWDTW <- paRao(
-#   x = KiliNP_Timeseries_Clean,
+#   x = KiliNP_Timeseries_SG,
 #   time_vector = Kili.dates,
 #   window = 3,
 #   alpha = 2,
@@ -533,7 +540,7 @@ kili.twdtw.tiles <- makeTiles(
 # 
 # writeRaster(
 #   Kili_Rao_TWDTW$window.3$alpha.2,
-#   filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
+#   filename = file.path(SG_KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
 #   overwrite = TRUE
 # )
 ######### End of not actually used section
@@ -542,8 +549,8 @@ kili.twdtw.tiles <- makeTiles(
 ## Gather up all the files
 
 kili.twdtw.rao.files <- list.files(
-  file.path(kili.twdtw.rao.dir, "TWDTW Rao-utputs"),
-  pattern = "KiliNP_2017-2021_TWDTW-RaoQ_Tile-",
+  file.path(kili.twdtw.rao.dir, "TWDTW_SG_Rao-utputs"),
+  pattern = "KiliNP_2017-2021_TWDTW-RaoQ_SG_Tile-",
   full.names = TRUE
 )
 
@@ -563,11 +570,11 @@ KiliNP_TWDTW_RaoQ <- terra::mosaic(kili.twdtw.rao.files)
 
 writeRaster(
   KiliNP_TWDTW_RaoQ,
-  file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ.tif"),
+  file.path(SG_KiliNP_Results, "Kilimanjaro_SG_TWDTW-RaoQ.tif"),
   overwrite = TRUE
 )
 
-KiliNP_TWDTW_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ.tif")) # Load in the raster
+KiliNP_TWDTW_RaoQ <- rast(file.path(SG_KiliNP_Results, "Kilimanjaro_SG_TWDTW-RaoQ.tif")) # Load in the raster
 
 plot(KiliNP_TWDTW_RaoQ)
 
@@ -589,13 +596,13 @@ names(KiliNP_Comparison_Rasters) <- c( # This sets nice layer names for easier b
 
 writeRaster( # So I don't have to compute it every time
   KiliNP_Comparison_Rasters,
-  filename = file.path(KiliNP_Results, "KiliNP_Diversity_Comparison.tif"),
+  filename = file.path(SG_KiliNP_Results, "KiliNP_SG_Diversity_Comparison.tif"),
   overwrite = TRUE
 )
 
-KiliNP_Comparison_Rasters <- rast(file.path(KiliNP_Results, "KiliNP_Diversity_Comparison.tif")) # Load it back in
+KiliNP_Comparison_Rasters <- rast(file.path(SG_KiliNP_Results, "KiliNP_SG_Diversity_Comparison.tif")) # Load it back in
 
-png(file.path(KiliNP_Results, "KiliNP_Indices_Comparison.png"), # Exported for the paper
+png(file.path(SG_KiliNP_Results, "KiliNP_SG_Indices_Comparison.png"), # Exported for the paper
     width = 2560, height = 1440, res = 150)
 
 plot(KiliNP_Comparison_Rasters) # Plot it in a file for export
@@ -742,5 +749,6 @@ KiliNP_PERMANOVA_Results <- data.frame(
 )
 
 print(KiliNP_PERMANOVA_Results)
+saveRDS(KiliNP_PERMANOVA_Results, file = file.path(SG_KiliNP_Results, "Kilimanjaro_SG_PERMANOVA_Summary_NDVI.rds")) # Save results for safe keeping
 
 message("Kilimanjaro analysis complete.")
