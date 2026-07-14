@@ -994,4 +994,7 @@ KiliNP_PERMANOVA_Results <- data.frame(
 
 print(KiliNP_PERMANOVA_Results)
 
+saveRDS(KiliNP_PERMANOVA_Results, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # Save it so I don't have to recalculate repeatedly
+KiliNP_PERMANOVA_Results <- readRDS(file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # And load it back in if necessary
+
 message("Kilimanjaro analysis complete.")
