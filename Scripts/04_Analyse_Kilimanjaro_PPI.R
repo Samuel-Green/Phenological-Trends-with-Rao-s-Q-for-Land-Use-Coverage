@@ -543,10 +543,10 @@ kili.tiles <- makeTiles(
 # ### Step 2: Compute classic Rao's Q for each tile
 # ## Firstly, I need to setup the environment for parallelisation
 # # Create a subfolder to store the classic Rao's Q output tiles
-# 
-# kili.rao.dir  <- file.path(kili.tile.dir, "rao-utputs") 
-# dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
-# 
+ 
+kili.rao.dir  <- file.path(KiliNP_Processed,"MeanPPI_Rao-utputs") 
+dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
+ 
 # ## Create a computing cluster to parallelise the calculation at the tile level
 # # Set the number of cores to be used by the cluster
 # 
@@ -709,7 +709,7 @@ kili.tiles <- makeTiles(
 
 kili.rao.files <- list.files(
   kili.rao.dir,
-  pattern = "Classic-RaoQ",
+  pattern = "KiliNP_PPI_Classic-RaoQ_SG_Tile-",
   full.names = TRUE
 )
 
@@ -793,8 +793,8 @@ kili.twdtw.tiles <- makeTiles(
 ## Gather up all the files
 
 kili.twdtw.rao.files <- list.files(
-  file.path(kili.twdtw.rao.dir, "TWDTW Rao-utputs"),
-  pattern = "KiliNP-SG_TimeseriesPPI_Tile-.tif",
+  file.path(KiliNP_Processed,"TWDTWPPI_Rao-utputs") ,
+  pattern = "KiliNP_PPI_TWDTW-RaoQ_SG_Tile",
   full.names = TRUE
 )
 
