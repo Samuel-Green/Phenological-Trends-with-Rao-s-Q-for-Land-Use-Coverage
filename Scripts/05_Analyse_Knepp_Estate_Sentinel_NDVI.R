@@ -95,8 +95,8 @@ KneppEstate_Buffered_Boundaries <- vect(file.path(Knepp_Processed,"Knepp_Estate_
 
 # Check that the CRS matches the timeseries raster
 
-if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Boundaries)){
-  Knepp_Buffered_Timeseries.NDVI <- project(Knepp_Buffered_Timeseries.NDVI, crs(KneppEstate_Boundaries))
+if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Buffered_Boundaries)){
+  Knepp_Buffered_Timeseries.NDVI <- project(Knepp_Buffered_Timeseries.NDVI, crs(KneppEstate_Buffered_Boundaries))
   message("The raster was reprojected to match the shape file's CRS")
 } else {message("The raster's CRS already matches the shapefile's CRS")}
 
@@ -124,13 +124,13 @@ message("Cropping and masking complete.")
 
 writeRaster(
   Knepp_Buffered_Timeseries.NDVI, 
-  filename = file.path(Knepp_Processed_Ext, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"), 
+  filename = file.path(Knepp_Processed, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"), 
   overwrite = TRUE
 )
 
 # Load the NDVI raster back in!
 
-Knepp_Buffered_Timeseries.NDVI <- rast(file.path(Knepp_Processed_Ext, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"))
+Knepp_Buffered_Timeseries.NDVI <- rast(file.path(Knepp_Processed, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"))
 
 ### OPTION 1: Export the dataset as a NetCDF file for Gaussian Processing ####
 ## Saverio Vicario has a Python script for the Gaussian processing

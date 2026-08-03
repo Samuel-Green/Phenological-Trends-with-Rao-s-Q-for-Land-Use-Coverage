@@ -956,18 +956,74 @@ KiliNP_Indices_Comparison_DF <- as.data.frame(
 
 # Mutate the numeric codes into readable strings
 
-KiliNP_Indices_Comparison_DF$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)]
+KiliNP_Indices_Comparison_DF.CombinedCoverClasses <- KiliNP_Indices_Comparison_DF
+KiliNP_Indices_Comparison_DF$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)] # Ensure look-up table is set to classic all 19 land cover types
+KiliNP_Indices_Comparison_DF.CombinedCoverClasses$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)] # Ensure look-up table is set to combined classes
 
 # Drop the numeric column to keep the dataframe clean for the PERMANOVA
 
 KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric <- NULL
 
-colnames(KiliNP_Indices_Comparison_DF) <- c(
-  "ShannonsH",
-  "RaosQ_Classic",
-  "RaosQ_TWDTW",
-  "Veg_GroundTruth"
-)
+# colnames(KiliNP_Indices_Comparison_DF) <- c(
+#   "ShannonsH",
+#   "RaosQ_Classic",
+#   "RaosQ_TWDTW",
+#   "Veg_GroundTruth"
+# )
+
+### Intra class variation exploration:
+## First calculate relevant statistics
+
+# Load required libraries
+
+message("Calculating intra-class variance for original 19 classes...")
+
+KiliNP_Stats_19Classes <- KiliNP_Indices_Comparison_DF %>%
+  filter(!is.na(Veg_GroundTruth)) %>%
+  group_by(Veg_GroundTruth) %>%
+  summarise(across(c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), \(x) var(x, na.rm = TRUE)))
+
+print(KiliNP_Stats_19Classes)
+
+message("Calculating intra-class variance for combined classes...")
+
+KiliNP_Stats_Combined <- KiliNP_Indices_Comparison_DF.CombinedCoverClasses %>%
+  filter(!is.na(Veg_GroundTruth)) %>%
+  group_by(Veg_GroundTruth) %>%
+  summarise(across(c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), \(x) var(x, na.rm = TRUE)))
+
+print(KiliNP_Stats_Combined)
+
+## Generate Comparative Box Plots
+
+message("Plotting box and whisker plots for combined classes...")
+
+# Assuming you created a subset for the combined classes similar to your 19-class subset:
+subset.KiliNP_Combined <- KiliNP_Indices_Comparison_DF.CombinedCoverClasses[sample(which(!is.na(KiliNP_Indices_Comparison_DF.CombinedCoverClasses$Veg_GroundTruth)), 10000), ]
+
+KiliNP_Boxplot_Combined <- subset.KiliNP_Combined %>%
+  pivot_longer(
+    cols = c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), 
+    names_to = "Index", 
+    values_to = "Value"
+  ) %>%
+  ggplot(aes(x = Veg_GroundTruth, y = Value, fill = Veg_GroundTruth)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, outlier.size = 0.5) +
+  facet_wrap(~Index, scales = "free_y") + # Allows each index to have its own Y-axis scale
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none" # Hide legend since X-axis labels explain the colours
+  ) +
+  labs(
+    title = "Intra-class Variance: Combined Land Cover Categories",
+    x = "Land Cover Type",
+    y = "Index Value"
+  )
+
+print(KiliNP_Boxplot_Combined)
+
+# Optional: To plot the 19 classes, simply replace `subset.KiliNP_Combined` with `subset.KiliNP_Indices_Comparison_DF`
 
 ### PERMANOVA ####
 ## These datasets are too large to conduct a PERMANOVA upon (37121.9GB RAM required)
