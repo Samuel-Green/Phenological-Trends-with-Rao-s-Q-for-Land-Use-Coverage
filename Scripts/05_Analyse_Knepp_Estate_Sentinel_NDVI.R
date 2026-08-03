@@ -100,6 +100,26 @@ if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Boundaries)){
   message("The raster was reprojected to match the shape file's CRS")
 } else {message("The raster's CRS already matches the shapefile's CRS")}
 
+# Crop the raster to just the study site
+
+message("Cropping and masking NDVI timeseries to the buffered Knepp boundaries...")
+
+# Step 1: Crop to the bounding box of the shapefile
+
+Knepp_Buffered_Timeseries.NDVI <- crop(
+  Knepp_Buffered_Timeseries.NDVI, 
+  KneppEstate_Buffered_Boundaries
+)
+
+# Step 2: Mask out the pixels outside the actual polygon shape
+
+Knepp_Buffered_Timeseries.NDVI <- mask(
+  Knepp_Buffered_Timeseries.NDVI, 
+  KneppEstate_Buffered_Boundaries
+)
+
+message("Cropping and masking complete.")
+
 # Export the raster for safe keeping
 
 writeRaster(
@@ -108,7 +128,7 @@ writeRaster(
   overwrite = TRUE
 )
 
-# Load the PPI raster back in!
+# Load the NDVI raster back in!
 
 Knepp_Buffered_Timeseries.NDVI <- rast(file.path(Knepp_Processed_Ext, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"))
 
