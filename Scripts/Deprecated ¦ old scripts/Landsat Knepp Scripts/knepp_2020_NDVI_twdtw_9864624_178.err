@@ -1,0 +1,8 @@
+terra 1.8.93
+
+
+Processing alpha: 2 Moving Window: 1
+
+ *** caught segfault ***
+address 0x300000013, cause 'memory not mapped'
+/var/spool/slurm/d/job9865698/slurm_script: line 19: 206747 Segmentation fault      (core dumped) Rscript 05.2A_Knepp_Estate_TWDTW-RaoQ_MaRC3a.R
