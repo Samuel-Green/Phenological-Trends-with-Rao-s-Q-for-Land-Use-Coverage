@@ -1,6 +1,6 @@
 {
 "type": "FeatureCollection",
-"name": "Knepp_Tiling_Grid_2020",
+"name": "Knepp_Tiling_Grid_2019",
 "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
 "features": [
 { "type": "Feature", "properties": { }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ -0.4680981042153, 51.026927463422872 ], [ -0.4680981042153, 51.032827332250285 ], [ -0.460077367508756, 51.032827332250285 ], [ -0.460077367508756, 51.026927463422872 ], [ -0.4680981042153, 51.026927463422872 ] ] ] ] } },

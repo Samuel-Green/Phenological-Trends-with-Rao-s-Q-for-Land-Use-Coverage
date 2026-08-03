@@ -49,20 +49,20 @@ r <- terra::rast(terra::as.array(r * 1.0), crs = terra::crs(r), ext = terra::ext
 # LOAD TRUE TIME VECTOR
 # -------------------------------
 
-# 1. Protect against trailing blank lines causing NAs in C++
-time_lines <- readLines(file.path(tile_dir, "time_vector.txt"))
-time_lines <- time_lines[time_lines != ""] 
-time_vector <- as.Date(time_lines)
+# 1. Extract the layer names directly from the loaded raster tile 'r'
+current_names <- names(r)
 
-cat("Running TWDTW Rao...\n")
-flush.console()
+# 2. Strip the "_NDVI" suffix and append "-15" to create a YYYY-MM-DD string
+# (This matches the naming convention you set up during your data prep)
+dynamic_dates_string <- paste0(sub("_NDVI$", "", current_names), "-15")
 
-# 2. Force the raster completely into RAM to prevent lazy-evaluation segfaults
-r <- r + 0 
+# 3. Convert the strings into actual R Date objects
+dynamic_time_vector <- as.Date(dynamic_dates_string, format = "%Y-%m-%d")
 
+# 4. Run the TWDTW Rao's Q using the newly generated, perfectly matched time vector
 res <- paRao(
   x = r,
-  time_vector = time_vector,
+  time_vector = dynamic_time_vector,
   window = 3,
   alpha = 2,
   na.tolerance = 0, # CRITICAL: Stops empty background pixels from crashing the C++ code
@@ -74,7 +74,7 @@ res <- paRao(
   cycle_length = "year",
   time_scale = "month",
   np = 1,
-  progBar = FALSE # 3. CRITICAL: Prevents stdout crashes in SLURM/RStudio!
+  progBar = FALSE # CRITICAL: Prevents stdout crashes in SLURM/RStudio!
 )
 
 rao <- res[[1]][[1]]

@@ -162,7 +162,7 @@ terra::writeCDF(
 
 sg_gapfill <- function(x) {
   
-  # Check if the pixel is blank across all 279 layers. If TRUE, return NAs to save time.
+  # Check if the pixel is blank across all layers. If TRUE, return NAs to save time.
   
   if (all(is.na(x))) {
     return(rep(NA, length(x)))
@@ -216,41 +216,119 @@ Knepp_Buffered_Timeseries.NDVI.Cleaned <- rast( # Load back in if necessary
 
 print(Knepp_Buffered_Timeseries.NDVI.Cleaned) # Summary
 
-for (i in 1:nlyr(Knepp_Buffered_Timeseries.NDVI.Cleaned)) { # Sequentially plot each individual raster layer (this takes a while)
-  plot(Knepp_Buffered_Timeseries.NDVI.Cleaned[[i]], main = names(Knepp_Buffered_Timeseries.NDVI.Cleaned)[i])
+# 1. Calculate the global min and max across all 3 years and 12 months
+
+tmp.global_range <- range(minmax(Knepp_Buffered_Timeseries.NDVI.Cleaned), na.rm = TRUE)
+
+for (i in 1:12) {
+  
+  # 2. Find all layers that match the current month (e.g., "-01_NDVI")
+  
+  tmp.month_regex <- sprintf("-%02d_NDVI", i)
+  tmp.month_stack <- Knepp_Buffered_Timeseries.NDVI.Cleaned[[grep(tmp.month_regex, names(Knepp_Buffered_Timeseries.NDVI.Cleaned))]]
+  
+  # 3. Plot all years for this month side-by-side, locked to the global colour scale
+  
+  plot(
+    tmp.month_stack, 
+    range = tmp.global_range,
+    main = names(tmp.month_stack)
+  )
+  
+  # 4. Pause the loop so you can actually inspect the plot before it moves to the next month
+  
+  invisible(readline(prompt = paste("Displaying Month", sprintf("%02d", i), "- Press [Enter] in the console to view the next month...")))
 }
+
+# 5. Wipe all temporary variables to keep the workspace completely uncluttered
+
+rm(i, tmp.global_range, tmp.month_regex, tmp.month_stack)
 
 ## Calculate the mean seasonal trajectory across the site ####
 # Crop to Knepp Estate site boundaries
 
-Knepp_Timeseries.NDVI <- crop(Knepp_Buffered_Timeseries.NDVI.Cleaned, KneppEstate_Boundaries, mask = TRUE)
+Knepp_Timeseries.NDVI <- crop(
+  Knepp_Buffered_Timeseries.NDVI.Cleaned, 
+  project(KneppEstate_Boundaries, crs(KneppEstate_Buffered_Boundaries)),
+  mask = TRUE
+)
 
 # Calculate the site's mean value for each month
 
 Knepp_Timeseries_Mean.NDVI <- global(Knepp_Timeseries.NDVI, fun = "mean", na.rm = TRUE) 
 
+# Calculate the mean for values outside the Knepp Estate
+# Use inverse = TRUE to blank out the inside of the estate, keeping the surrounding farmland
+
+Knepp_Environs_Timeseries.NDVI <- mask(
+  Knepp_Buffered_Timeseries.NDVI.Cleaned, 
+  project(KneppEstate_Boundaries, crs(Knepp_Buffered_Timeseries.NDVI.Cleaned)), 
+  inverse = TRUE
+)
+
+# Calculate the mean site value for each month for the outside farmland
+
+Knepp_Environs_Timeseries.NDVI <- global(Knepp_Environs_Timeseries.NDVI, fun = "mean", na.rm = TRUE)
+
+## Plot the seasonal NDVI trajectories
+# 1. Initiate the plot with the inside data
+
 png(file.path(Knepp_Results, "Knepp_Estate_NDVI_Mean_Timeseries.png"), # Specifies that I want a 4K resolution .png file
     width = 3840, height = 2160, res = 150)
 
-plot(Knepp.full.dates, Knepp_Timeseries_Mean.NDVI[,1],
+plot(Knepp.full.dates, Knepp_Timeseries_Mean.NDVI[,1], # Starts the plot
      type = "l",
      lwd = 2,
+     col = "forestgreen",
+     ylim = range(c(Knepp_Timeseries_Mean.NDVI[,1], Knepp_Environs_Timeseries.NDVI[,1]), na.rm = TRUE),
      xlab = "Date",
      ylab = "Mean NDVI",
-     main = "Knepp Estate – Mean NDVI Time Series")
+     main = "Knepp Estate vs. Surrounding Farmland - Mean NDVI",
+     xaxt = "n") 
+
+# 2. Add the Outside data line
+
+lines(Knepp.full.dates, Knepp_Environs_Timeseries.NDVI[,1], 
+      lwd = 2, 
+      col = "chocolate")
+
+# 3. Add horizontal and vertical gridlines
+
+grid(nx = NA, ny = NULL, col = "lightgray", lty = "dotted")
+
+# 4. Add custom X-axis minor ticks (every month, no labels, shorter tick length)
+
+axis.Date(1, at = Knepp.full.dates, labels = FALSE, tcl = -0.25)
+
+# 5. Add custom X-axis major ticks (every year, with labels, longer tick length)
+# This dynamically finds the unique years in your dataset to place the major labels
+
+axis.Date(1, 
+          at = as.Date(paste0(unique(format(Knepp.full.dates, "%Y")), "-01-15")), 
+          format = "%Y", 
+          tcl = -0.5)
+
+# 6. Add a legend
+
+legend("topright", 
+       legend = c("Knepp Estate", "Environs surrounding Knepp"), 
+       col = c("forestgreen", "chocolate"), 
+       lwd = 2, 
+       bty = "n") # 'n' removes the ugly bounding box around the legend
+
+# Save the file
 
 dev.off() # This actually exports the plot to the file
 
 ### Single year diversity analyses ####
-## I have CEH land-cover data for 2000, 2007, 2015, and 2020
-## To fairly compare the indices, I'm subsetting the spatial raster to those years
+## Select the years and dynamically set the years of interest for this analysis
 # Extract year from the time vector
 
 Knepp.years <- format(Knepp.full.dates, "%Y")
 
 # Define Years of Interest (Abbreviation: YoI)
 
-YoI <- c("2000", "2007", "2015", "2020")
+YoI <- unique(Knepp.years)
 
 # Create list of NDVI stacks per year
 
