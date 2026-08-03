@@ -884,7 +884,7 @@ masked.KiliNP_PPI_TWDTW_RaoQ <- mask(crop(KiliNP_PPI_TWDTW_RaoQ, KiliNP_LandCove
 # First I need to update the ground truth vector to use the proper category names
 # I'll use a lookup table
 
-kili.land.cover.lookup <- c(
+kili.land.cover.lookup <- c( # These are the true categories from Andreas Hemp, 2006
   "0"  = "Snow/glacier",
   "1"  = "Agriculture (MAI)",
   "2"  = "Savannah (SAV)",
@@ -904,9 +904,26 @@ kili.land.cover.lookup <- c(
   "19" = "Coffee plantations (COF)"
 )
 
-# Assign readable names to the grid code vector of the ground truth
-
-KiliNP_LandCover_Vector$grid_code <- kili.land.cover.lookup[as.character(KiliNP_LandCover_Vector$grid_code)]
+kili.land.cover.lookup <- c( # These are combined land cover types to aid the model's performance
+  "0"  = NA,                                     # Exclude: Snow/glacier
+  "1"  = "Anthropogenic",                        # Agriculture (MAI)
+  "2"  = "Dry Natural Vegetation (Savannah)",    # Savannah (SAV)
+  "3"  = NA,                                     # Exclude: Swamp (Azonal/Water-logged)
+  "4"  = "Anthropogenic",                        # Overgrown clearing (Disturbed/Man-made)
+  "7"  = "Anthropogenic",                        # Forest plantation
+  "9"  = NA,                                     # Exclude: Riverine (Azonal)
+  "10" = "Moist/Evergreen Cloud Forest",         # Upper montane Erica excelsa forest
+  "11" = "Alpine/Subalpine Shrub & Grassland",   # Subalpine Erica trimera bushland
+  "12" = "Moist/Evergreen Cloud Forest",         # Podocarpus forest
+  "13" = "Alpine/Subalpine Shrub & Grassland",   # Subalpine tussock grassland
+  "14" = "Anthropogenic",                        # Chagga homegardens
+  "15" = "Alpine/Subalpine Shrub & Grassland",   # Alpine Helichrysum vegetation
+  "16" = "Moist/Evergreen Cloud Forest",         # Ocotea forest
+  "17" = NA,                                     # Exclude: Bare rock
+  "18" = "Moist/Evergreen Cloud Forest",         # Sub/lower montane rainforest
+  "19" = "Anthropogenic"                         # Coffee plantations
+) 
+# I'm getting some kind of error when I try and use either lookup table, so we'll assign readable names later
 
 # Rasterise the land cover vector
 
@@ -929,13 +946,21 @@ names(KiliNP_Indices_Comparison_Raster) <- c(
   "ShannonsH",
   "RaosQ_Classic",
   "RaosQ_TWDTW",
-  "Veg_GroundTruth"
+  "Veg_GroundTruth_Numeric" # Renamed to reflect integer status
 )
 
 KiliNP_Indices_Comparison_DF <- as.data.frame(
   KiliNP_Indices_Comparison_Raster,
   na.rm = TRUE
 )
+
+# Mutate the numeric codes into readable strings
+
+KiliNP_Indices_Comparison_DF$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)]
+
+# Drop the numeric column to keep the dataframe clean for the PERMANOVA
+
+KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric <- NULL
 
 colnames(KiliNP_Indices_Comparison_DF) <- c(
   "ShannonsH",
@@ -947,9 +972,14 @@ colnames(KiliNP_Indices_Comparison_DF) <- c(
 ### PERMANOVA ####
 ## These datasets are too large to conduct a PERMANOVA upon (37121.9GB RAM required)
 ## Instead, I will use a random representative subset of the data
-# Subset the data
+# Option 1: if there are no NA values in the dataframe
 
 subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[sample(nrow(KiliNP_Indices_Comparison_DF), 10000), ]
+
+# Option 2: if there are NA values in the dataframe (this one filters them out first)
+
+subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[
+  sample(which(!is.na(KiliNP_Indices_Comparison_DF$Veg_GroundTruth)), 10000), ]
 
 # Conduct a series of PERMANOVAs
 
@@ -958,18 +988,21 @@ PERMANOVA_ShannonsH <- adonis2(
   permutations = 999,
   parallel = kili.cores # I've set it to parallelise using the kili.cores argument from before
 )
+saveRDS(PERMANOVA_ShannonsH, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_ShannonsH.rds")) # Save it so I don't have to recalculate repeatedly
 
 PERMANOVA_RaosQ_Classic <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999,
   parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_Classic, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Classic_RaosQ.rds")) # Save it so I don't have to recalculate repeatedly
 
 PERMANOVA_RaosQ_TWDTW <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999,
   parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_TWDTW, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_TWDTW_RaosQ.rds")) # Save it so I don't have to recalculate repeatedly
 
 # Put the PERMANOVA results into a dataframe for effective presentation
 
