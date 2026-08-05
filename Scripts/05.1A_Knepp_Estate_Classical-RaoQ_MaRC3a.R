@@ -38,6 +38,19 @@ flush.console()
 
 r <- rast(tile_file)
 
+# Extract the array to break ALTREP bindings
+r_array <- terra::as.array(r)
+
+# Flag Sentinel-2 NoData (-9999 or -32768) as NA to prevent mathematical overflow
+r_array[r_array <= -9000] <- NA
+
+# Scale the integers back to a normal float range (-1 to 1)
+# Multiplying by 1.0 forces strict double-precision numeric memory for the C++ code
+r_array <- (r_array / 10000) * 1.0
+
+# Rebuild the raster with the cleaned, scaled data
+r <- terra::rast(r_array, crs = terra::crs(r), ext = terra::ext(r))
+
 cat("Running Classical Rao...\n")
 flush.console()
 

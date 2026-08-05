@@ -41,7 +41,7 @@ Knepp.input.files <- list.files(
 # Import and stack all of the Sentinel-2 GeoTIFFs into one object
 # Because each file has 12 layers, this will automatically create a 48-layer stack (4 years * 12 months)
 
-Knepp_Buffered_Timeseries.NDVI <- rast(Knepp.input.files[-2])
+Knepp_Buffered_Timeseries.NDVI <- rast(Knepp.input.files[-2]) # Removes the year 2018 because that raster is broken
 
 # Extract the year from the filename (grabs the first 4 digits of the filename)
 
@@ -49,7 +49,7 @@ Knepp.years.files <- sub("^(\\d{4}).*", "\\1", basename(Knepp.input.files))
 
 # Generate clean layer names for all 12 months for each year (e.g., "2017-01_NDVI")
 
-Knepp.layer.names <- unlist(lapply(Knepp.years.files[-2], function(y) {
+Knepp.layer.names <- unlist(lapply(Knepp.years.files[-2], function(y) { # Removes 2018
   paste0(y, "-", sprintf("%02d", 1:12), "_NDVI")
 }))
 
@@ -347,19 +347,21 @@ message("Calculating Shannon-Wiener diversity index...")
 
 compute_shannon_year <- function(r_stack, year) {
   
-  ## Restructure the raster into a simple data matrix
-  
   message("Processing Shannon's H for year: ", year)
   
   # Mean NDVI (collapse time)
   
   mean_ndvi <- app(r_stack, mean, na.rm = TRUE)
   
-  # Avoid numerical saturation by rounding to 2 decimal places
+  # 1. Scale Sentinel-2 NDVI back to a standard -1 to 1 float range
   
-  mean_ndvi_2dec <- round(mean_ndvi, 2)
+  mean_ndvi_scaled <- mean_ndvi / 10000
   
-  ## Calculate the Shannon-Wiener index
+  # 2. Avoid numerical saturation by rounding to 2 decimal places to create classes
+  
+  mean_ndvi_2dec <- round(mean_ndvi_scaled, 2)
+  
+  # Calculate the Shannon-Wiener index
   
   shannon_mat <- rasterdiv::ShannonS(
     x = terra::as.matrix(mean_ndvi_2dec, wide = TRUE),
@@ -367,14 +369,13 @@ compute_shannon_year <- function(r_stack, year) {
     na.tolerance = 0
   )
   
-  ## Convert the matrix back to a raster
+  # Convert the matrix back to a raster
   
   shannon_rast <- rast(shannon_mat)
   ext(shannon_rast) <- ext(mean_ndvi_2dec)
   crs(shannon_rast) <- crs(mean_ndvi_2dec)
   names(shannon_rast) <- paste0("ShannonH_", year)
   
-  ## Save the raster
   # Define an output file path
   
   out_path <- file.path(
@@ -647,17 +648,15 @@ names(Knepp_NDVI_TWDTW_Rao_YoI) <- YoI
 ## Load and process the land cover maps from the UK's Centre for Ecology and Hydrology
 # Load the spatial rasters
 
-Knepp_CEH_LandCover_2000 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2000/data/LCM2000.tif"))
-Knepp_CEH_LandCover_2007 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2007/data/LCM2007.tif"))
-Knepp_CEH_LandCover_2015 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2015/data/LCM2015.tif"))
+Knepp_CEH_LandCover_2017 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2017/data/LCM_2017.tif"))
+Knepp_CEH_LandCover_2019 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2019/data/LCM_2019.tif"))
 Knepp_CEH_LandCover_2020 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2020/data/LCM2020.tif"))
 
 # Put them in a list for convenience
 
 Knepp_CEH_LandCover_YoI <- list(
-  "2000" = Knepp_CEH_LandCover_2000,
-  "2007" = Knepp_CEH_LandCover_2007,
-  "2015" = Knepp_CEH_LandCover_2015,
+  "2017" = Knepp_CEH_LandCover_2017,
+  "2019" = Knepp_CEH_LandCover_2019,
   "2020" = Knepp_CEH_LandCover_2020
 )
 
@@ -745,7 +744,7 @@ for (y in names(Knepp_LandCover_AlignedIndices_YoI.NDVI)) {
   
   out_file <- file.path(
     Knepp_Results,
-    paste0("Knepp_", y, "_Aligned_Indices_NDVI.tif")
+    paste0("Knepp_", y, "_Sentinel_Aligned_Indices_NDVI.tif")
   )
   
   writeRaster(
@@ -760,7 +759,7 @@ for (y in names(Knepp_LandCover_AlignedIndices_YoI.NDVI)) {
 Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(YoI, function(y) {
   
   rast(
-    file.path(Knepp_Results, paste0("Knepp_", y, "_Aligned_Indices_NDVI.tif"))
+    file.path(Knepp_Results, paste0("Knepp_", y, "_Sentinel_Aligned_Indices_NDVI.tif"))
   )
 })
 
