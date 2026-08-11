@@ -1011,24 +1011,75 @@ Knepp_DF_YoI.PPI <- lapply(
     
     # Ensure land cover is treated as categorical
     
-    #df$LandCover <- as.factor(df$LandCover)
+    #df$LandCover <- as.factor(df$LandCover) # Not required anymore as using named LC types
     
     return(df)
   }
 )
 
-# And now we loop over the dataframe to run the PERMANOVAe upon it
+## Investigate frequency distribution of land cover types
+# I thought it'd be interesting to identify what land cover types are present
+# How they change for each year
+# And understand the variance of the land cover classes better
+
+View(data.frame( # View it in R
+  Habitat = names(table(Knepp_DF_YoI.PPI[["2019"]]$LandCover)),
+  Pixels_2019 = as.numeric(table(Knepp_DF_YoI.PPI[["2019"]]$LandCover)),
+  Pixels_2020 = as.numeric(table(Knepp_DF_YoI.PPI[["2020"]]$LandCover))
+  ))
+
+write.csv(data.frame( # Save it externally as a .CSV
+  Habitat = names(table(Knepp_DF_YoI.PPI[["2019"]]$LandCover)),
+  Pixels_2019 = as.numeric(table(Knepp_DF_YoI.PPI[["2019"]]$LandCover)),
+  Pixels_2020 = as.numeric(table(Knepp_DF_YoI.PPI[["2020"]]$LandCover))
+  ), file.path(Knepp_Results,"KneppBuffered_LandCover_FrequencyDistribution.csv"))
+
+## Subsample the dataframe
+# Take a sample of 10,000 rows to prevent distance-matrix memory crashes
+# Many land cover classes are ecologically insignificant in this dataset and reduce model performance
+# Therefore, I'm specifying the important land cover types and then subsetting to include those only
+
+target_classes <- c(
+  "Broadleaved woodland", 
+  "Coniferous woodland",
+  "Arable and horticulture", 
+  "Improved grassland", 
+  "Urban",
+  "Suburban" 
+) # Add or remove classes as required
+
+# Dynamically calculate the sample size per class
+
+total_target_pixels <- 10000
+n_classes <- length(target_classes)
+
+# Use floor() to round down so we don't accidentally ask for a fraction of a pixel
+
+pixels_per_class <- floor(total_target_pixels / n_classes) 
+
+message("Sampling up to ", pixels_per_class, " pixels across ", n_classes, " classes.")
+
+## And now we loop over the dataframe to run the PERMANOVAe upon it
 
 Knepp_PERMANOVA_YoI.PPI <- lapply(
-  Knepp_DF_YoI.PPI,
-  function(df) {
+  names(Knepp_DF_YoI.PPI),
+  function(y) {
     
-    ## Subsample the dataframe
-    # Take a random sample of 10,000 rows to prevent distance-matrix memory crashes
-    # The min() function acts as a safety net just in case a year has fewer than 10k valid pixels
+    df <- Knepp_DF_YoI.PPI[[y]]
     
-    sample_size <- min(10000, nrow(df))
-    df_subset <- df[sample(nrow(df), sample_size), ]
+    # 3. Filter out the fringe/empty classes
+    
+    df_filtered <- df[df$LandCover %in% target_classes, ]
+    
+    # 4. Stratified Subsampling using dynamic values
+    
+    set.seed(123)
+    df_subset <- df_filtered %>%
+      group_by(LandCover) %>%
+      # slice_sample automatically handles groups that are smaller than pixels_per_class!
+      slice_sample(n = pixels_per_class, replace = FALSE) %>% 
+      ungroup() %>%
+      as.data.frame()
     
     list(
       
