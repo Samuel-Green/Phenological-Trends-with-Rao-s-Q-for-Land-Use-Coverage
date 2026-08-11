@@ -1,6 +1,6 @@
 ############################################################################ ###
 # Elliot Samuel Shayle - University of Marburg - 24/11/2025                    #
-# 05B_Analyse_Knepp_Estate_NDVI.R                                              #
+# 05_Analyse_Knepp_Estate_Sentinel_NDVI.R                                      #
 # Comparative NDVI analysis of TWDTW Rao's Q & classic Rao's Q in Knepp Estate #
 ############################################################################ ###
 
@@ -25,8 +25,8 @@ dir.create(Knepp_Results, showWarnings = FALSE, recursive = TRUE)
 
 # Explicitly set the input directory to the external drive to manage storage
 
-Knepp_Input_Ext <- "D:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Input Data" # External location because my computer is low on storage
-Knepp_Processed_Ext <- "D:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Processed Data" # External location because my computer is low on storage
+Knepp_Input_Ext <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Input Data" # External location because my computer is low on storage
+Knepp_Processed_Ext <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Processed Data" # External location because my computer is low on storage
 
 message("Importing Sentinel-2 NDVI annual rasters...")
 
@@ -765,79 +765,95 @@ Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(YoI, function(y) {
 
 names(Knepp_LandCover_AlignedIndices_YoI.NDVI) <- YoI
 
-## Now I convert the raster stacks to a dataframe so I can run analyses on them
-# The dataframe will have one row per pixel, and columns for each index and the land cover class
+### PERMANOVAs to assess the indices's performance
 
-Knepp_DF_YoI.NDVI <- lapply(
-  Knepp_LandCover_AlignedIndices_YoI.NDVI,
-  function(stack) {
-    
-    df <- as.data.frame(stack, na.rm = TRUE)
-    
-    colnames(df) <- c(
-      "ShannonH",
-      "RaosQ_Classic",
-      "RaosQ_TWDTW",
-      "LandCover"
-    )
-    
-    # Ensure land cover is treated as categorical
-    
-    df$LandCover <- as.factor(df$LandCover)
-    
-    return(df)
+message("Beginning PERMANOVA calculations with checkpointing...")
+
+# 1. Initialize an empty list to store the final combined results
+
+Knepp_PERMANOVA_YoI.NDVI <- list()
+
+# 2. Extract the years we need to loop through
+
+for (y in YoI) {
+  
+  message(">> Processing Year: ", y)
+  
+  df <- Knepp_DF_YoI.NDVI[[y]]
+  
+  ## Subsample the dataframe
+  # Use a set seed so if the script restarts, it draws the exact same 10,000 pixels!
+  
+  set.seed(123) # Should have been given in the setup script, but here again in case 
+  sample_size <- min(10000, nrow(df))
+  df_subset <- df[sample(nrow(df), sample_size), ]
+  
+  # Define individual checkpoint file paths for this specific year
+  
+  file_shannon <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_Shannon.rds"))
+  file_classic <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_Classic.rds"))
+  file_twdtw   <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_TWDTW.rds"))
+  
+  
+  ## 1. Shannon's H
+  
+  if (file.exists(file_shannon)) {
+    message(paste("  [✓] Shannon PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
+    res_shannon <- readRDS(file_shannon)
+  } else {
+    message(paste("  [ ] Calculating Shannon PERMANOVA...", Sys.time()))
+    res_shannon <- adonis2(df_subset$ShannonH ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
+    saveRDS(res_shannon, file_shannon)
+    message(paste("  [✓] Shannon PERMANOVA saved.", Sys.time()))
   }
-)
-
-# And now we loop over the dataframe to run the PERMANOVAe upon it
-
-Knepp_PERMANOVA_YoI.NDVI <- lapply(
-  Knepp_DF_YoI.NDVI,
-  function(df) {
-    
-    ## Subsample the dataframe
-    # Take a random sample of 10,000 rows to prevent distance-matrix memory crashes
-    # The min() function acts as a safety net just in case a year has fewer than 10k valid pixels
-    
-    sample_size <- min(10000, nrow(df))
-    df_subset <- df[sample(nrow(df), sample_size), ]
-    
-    list(
-      
-      # These are structured in the same way as the PERMANOVAe from the other case studies
-      
-      Shannon = adonis2(
-        df_subset$ShannonH ~ df_subset$LandCover,
-        #data = df_subset, # IDK why, but R cannot find ShannonH unless defined by a $
-        permutations = 999,
-        parallel = parallel::detectCores() - 2
-      ),
-      
-      Rao_Classic = adonis2(
-        df_subset$RaosQ_Classic ~ df_subset$LandCover,
-        #data = df_subset,
-        permutations = 999,
-        parallel = parallel::detectCores() - 2
-      ),
-      
-      Rao_TWDTW = adonis2(
-        df_subset$RaosQ_TWDTW ~ df_subset$LandCover,
-        #data = df_subset,
-        permutations = 999,
-        parallel = parallel::detectCores() - 2
-      )
-    )
+  
+  
+  ## 2. Classic Rao'S Q
+  
+  if (file.exists(file_classic)) {
+    message(paste("  [✓] Classic Rao PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
+    res_classic <- readRDS(file_classic)
+  } else {
+    message(paste("  [ ] Calculating Classic Rao PERMANOVA...", Sys.time()))
+    res_classic <- adonis2(df_subset$RaosQ_Classic ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
+    saveRDS(res_classic, file_classic)
+    message(paste("  [✓] Classic Rao PERMANOVA saved.", Sys.time()))
   }
-)
+  
+  
+  ## 3. TWDTW Rao'S Q
+  
+  if (file.exists(file_twdtw)) {
+    message(paste("  [✓] TWDTW Rao PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
+    res_twdtw <- readRDS(file_twdtw)
+  } else {
+    message(paste("  [ ] Calculating TWDTW Rao PERMANOVA...", Sys.time()))
+    res_twdtw <- adonis2(df_subset$RaosQ_TWDTW ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
+    saveRDS(res_twdtw, file_twdtw)
+    message(paste("  [✓] TWDTW Rao PERMANOVA saved.", Sys.time()))
+  }
+  
+  ## 4. Pack the year's results into the master list to perfectly match your old output format
+  
+  Knepp_PERMANOVA_YoI.NDVI[[y]] <- list(
+    Shannon = res_shannon,
+    Rao_Classic = res_classic,
+    Rao_TWDTW = res_twdtw
+  )
+}
 
+# Save the consolidated master object
+
+message("\nSaving consolidated PERMANOVA list object...")
 saveRDS(Knepp_PERMANOVA_YoI.NDVI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_YoI_NDVI.rds"))
 
-# Finally, putting the results into their own dataframe
+### Compile the Summary Dataframe
+
+message("Compiling PERMANOVA summary dataframe...")
 
 Knepp_PERMANOVA_Summary.NDVI <- do.call(rbind, lapply(
   names(Knepp_PERMANOVA_YoI.NDVI),
   function(y) {
-    
     res <- Knepp_PERMANOVA_YoI.NDVI[[y]]
     
     data.frame(
