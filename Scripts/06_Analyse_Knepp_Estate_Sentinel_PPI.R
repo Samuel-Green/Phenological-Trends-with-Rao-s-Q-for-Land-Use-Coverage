@@ -1109,6 +1109,8 @@ Knepp_PERMANOVA_YoI.PPI <- lapply(
   }
 )
 
+names(Knepp_PERMANOVA_YoI.PPI) <- names(Knepp_DF_YoI.PPI) # Name the list elements
+
 saveRDS(Knepp_PERMANOVA_YoI.PPI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_YoI_PPI.rds"))
 
 # Finally, putting the results into their own dataframe
