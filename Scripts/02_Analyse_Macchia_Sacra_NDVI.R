@@ -39,6 +39,21 @@ MS_NDVI_Timeseries <- rast(MS_NDVI_File)
 
 stopifnot(inherits(MS_NDVI_Timeseries, "SpatRaster"))
 
+# Path to the land cover classification shapefile from Matteo
+
+MS.land.cover.file <- file.path(Macchia_Input, "MS_Data_From_Matteo/MacchiaSacra_Shapefile/MacchiaSacra_32632.shp")
+
+# Read vector landcover
+
+MacchiaSacra_LandCover_Vector <- vect(MS.land.cover.file)
+
+# Ensure CRS matches diversity rasters
+
+if (crs(MS_NDVI_Timeseries) != crs(MacchiaSacra_LandCover_Vector)){
+  message("The shapefile's CRS differs from the diversity index raster's CRS")
+  MacchiaSacra_LandCover_Vector <- project(MacchiaSacra_LandCover_Vector, crs(MS_NDVI_Timeseries)) # reprojects the shapefile if CRSs differ
+} else {message("The shapefile's CRS matches the diversity index raster's CRS")}
+
 ### Inspect temporal structure ####
 ## rasterdiv::paRao() requires an explicit time_vector
 ## This must correspond EXACTLY to the layer order
@@ -144,14 +159,107 @@ writeRaster(
 )
 
 ### 3. Rao's Q with TWDTW ####
-## Parameters are copied from the Hackathon preprint
 
-message("Calculating Rao's Q with TWDTW distance...")
+message("Starting two-stage search for optimal TWDTW \U03B1 (steepness)...")
 
-# If the function is taking too long to compute, make sure to enable parallelisation
-# For running on an HPC with unknown cores, I can use the function `parallel::detectCores()`
-# And set the "np" argument to detectCores() - 1
-# Also requires the package 'snow' to parallelise, so I've disabled it for now
+### 3a. Coarse Grid Search
+
+alpha_coarse_grid <- c(-0.1, -0.3, -0.5, -0.7, -0.9)
+alpha_results <- data.frame(Alpha = numeric(), R2 = numeric(), p_value = numeric())
+
+for (a in alpha_coarse_grid) {
+  message(paste("Coarse testing \U03B1 =", a))
+  
+  tmp.RaoQ <- paRao(
+    x = MS_NDVI_Timeseries[[1:146]],
+    time_vector = MS_Time[1:146],
+    window = 3,
+    alpha = 2,
+    na.tolerance = 0,
+    simplify = 2,
+    np = detectCores() - 2, 
+    progBar = FALSE,
+    method = "multidimension",
+    dist_m = "twdtw",
+    midpoint = 35,
+    stepness = a, # Passing the alpha variable to the 'stepness' argument
+    cycle_length = "year",
+    time_scale = "day"
+  )
+  
+  tmp.raster <- tmp.RaoQ$window.3$alpha.2
+  tmp.cropped <- crop(tmp.raster, MacchiaSacra_LandCover_Vector)
+  tmp.masked  <- mask(tmp.cropped, MacchiaSacra_LandCover_Vector)
+  
+  tmp.stack <- c(tmp.masked, MacchiaSacra_LandCover_Raster)
+  names(tmp.stack) <- c("RaosQ", "Veg_GroundTruth")
+  tmp.df <- as.data.frame(tmp.stack, na.rm = TRUE)
+  
+  tmp.permanova <- adonis2(tmp.df$RaosQ ~ tmp.df$Veg_GroundTruth, permutations = 999)
+  
+  alpha_results <- rbind(alpha_results, data.frame(
+    Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1]
+  ))
+}
+
+best.coarse.alpha <- alpha_results$Alpha[which.max(alpha_results$R2)]
+message(paste("Best coarse \U03B1 is:", best.coarse.alpha))
+
+### 3b. Fine Grid Search
+## Create a tight grid around the best coarse value (± 0.1 in steps of 0.05)
+
+alpha_fine_grid <- seq(best.coarse.alpha + 0.1, best.coarse.alpha - 0.1, by = -0.05)
+# Ensure we don't accidentally test values outside sensible bounds (e.g., > 0)
+alpha_fine_grid <- alpha_fine_grid[alpha_fine_grid < 0] 
+
+for (a in alpha_fine_grid) {
+  # Skip if we already tested this exact value in the coarse grid
+  if (a %in% alpha_coarse_grid) next 
+  
+  message(paste("Fine testing \U03B1 =", a))
+  
+  tmp.RaoQ <- paRao(
+    x = MS_NDVI_Timeseries[[1:146]],
+    time_vector = MS_Time[1:146],
+    window = 3,
+    alpha = 2,
+    na.tolerance = 0,
+    simplify = 2,
+    np = detectCores() - 2,
+    progBar = FALSE,
+    method = "multidimension",
+    dist_m = "twdtw",
+    midpoint = 35,
+    stepness = a,
+    cycle_length = "year",
+    time_scale = "day"
+  )
+  
+  tmp.raster <- tmp.RaoQ$window.3$alpha.2
+  tmp.cropped <- crop(tmp.raster, MacchiaSacra_LandCover_Vector)
+  tmp.masked  <- mask(tmp.cropped, MacchiaSacra_LandCover_Vector)
+  
+  tmp.stack <- c(tmp.masked, MacchiaSacra_LandCover_Raster)
+  names(tmp.stack) <- c("RaosQ", "Veg_GroundTruth")
+  tmp.df <- as.data.frame(tmp.stack, na.rm = TRUE)
+  
+  tmp.permanova <- adonis2(tmp.df$RaosQ ~ tmp.df$Veg_GroundTruth, permutations = 999)
+  
+  alpha_results <- rbind(alpha_results, data.frame(
+    Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1]
+  ))
+}
+
+print("Full Grid Search Complete. Results:")
+print(alpha_results[order(-alpha_results$R2), ]) # Sorts to show best R2 at the top
+
+# Extract the absolute best performing alpha
+MS.NDVI.Optimal_Alpha <- alpha_results$Alpha[which.max(alpha_results$R2)]
+message(paste("The absolute optimal \U03B1 value is:", MS.NDVI.Optimal_Alpha))
+
+### 3c. Final TWDTW Rao's Q Calculation
+
+message(paste("Calculating final Rao's Q with optimized \U03B1 (", MS.NDVI.Optimal_Alpha, ")...", sep=""))
 
 MS_NDVI_TWDTW_RaoQ <- paRao(
   x = MS_NDVI_Timeseries[[1:146]],
@@ -160,17 +268,15 @@ MS_NDVI_TWDTW_RaoQ <- paRao(
   alpha = 2,
   na.tolerance = 0,
   simplify = 2,
-  np = 6, # Number of cores to use (I'd rather not wait forever)
+  np = detectCores() - 2, 
   progBar = TRUE,
   method = "multidimension",
   dist_m = "twdtw",
-  midpoint = 35, # This is not the midpoint of the vector, rather the ecological midpoint of the cycle
-  stepness = -0.5, # I just noticed, shouldn't the α value be called "steepness" instead of "stepness"?
+  midpoint = 35, 
+  stepness = MS.NDVI.Optimal_Alpha, 
   cycle_length = "year",
-  time_scale = "day" # this specifies that our midpoint, 35, occurs after 35 days
+  time_scale = "day" 
 )
-
-# This function exports my object as a GeoTIF for viewing in QGIS etc.
 
 writeRaster(
   MS_NDVI_TWDTW_RaoQ$window.3$alpha.2,
