@@ -8,3 +8,8 @@
 **/Knepp Estate/**/*.tiff
 .positai
 .posit/assistant
+/Data/Processed Data/Kilimanjaro_SG_Test
+Data/Input Data/Knepp Estate/Knepp_Buffered_NDVI_Raw.nc
+Data/Input Data/Knepp Estate/Knepp_Buffered_NDVI_Raw.nc
+Data/Processed Data/Knepp Estate/Knepp_Buffered_PPI_Raw.nc
+Data/Processed Data/Knepp Estate/Knepp_Buffered_NDVI_Raw.nc
