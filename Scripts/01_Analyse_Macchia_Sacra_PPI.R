@@ -163,6 +163,25 @@ writeRaster(
 
 message("Starting two-stage search for optimal TWDTW \U03B1 (steepness)...")
 
+## Create Land Cover Raster Template
+
+# 1. Create a cropped and masked spatial template using the existing Mean raster
+
+template_raster <- crop(MS_NDVI_Mean_Raster, MacchiaSacra_LandCover_Vector)
+template_raster <- mask(template_raster, MacchiaSacra_LandCover_Vector)
+
+# 2. Give each polygon a proper category label
+
+MacchiaSacra_LandCover_Vector$CAT <- MacchiaSacra_LandCover_Vector$decsr
+
+# 3. Rasterize using the perfect spatial template
+
+MacchiaSacra_LandCover_Raster <- rasterize(
+  MacchiaSacra_LandCover_Vector,
+  template_raster,
+  field = "CAT"
+)
+
 ### 3a. Coarse Grid Search
 
 alpha_coarse_grid <- c(-0.1, -0.3, -0.5, -0.7, -0.9)
@@ -183,16 +202,20 @@ for (a in alpha_coarse_grid) {
     method = "multidimension",
     dist_m = "twdtw",
     midpoint = 35,
-    stepness = a, # Passing the alpha variable to the 'stepness' argument
+    stepness = a, 
     cycle_length = "year",
     time_scale = "day"
   )
+  
+  # Crop and mask the TWDTW output to match the template extent
   
   tmp.raster <- tmp.RaoQ$window.3$alpha.2
   tmp.cropped <- crop(tmp.raster, MacchiaSacra_LandCover_Vector)
   tmp.masked  <- mask(tmp.cropped, MacchiaSacra_LandCover_Vector)
   
-  tmp.stack <- c(tmp.masked, MacchiaSacra_LandCover_Raster)
+  # Stack now works perfectly because MacchiaSacra_LandCover_Raster is already defined
+  
+  tmp.stack <- c(tmp.masked, MacchiaSacra_LandCover_Raster) 
   names(tmp.stack) <- c("RaosQ", "Veg_GroundTruth")
   tmp.df <- as.data.frame(tmp.stack, na.rm = TRUE)
   
@@ -255,6 +278,7 @@ print("Full Grid Search Complete. Results:")
 print(alpha_results[order(-alpha_results$R2), ]) # Sorts to show best R2 at the top
 
 # Extract the absolute best performing alpha
+
 MS.PPI.Optimal_Alpha <- alpha_results$Alpha[which.max(alpha_results$R2)]
 message(paste("The absolute optimal \U03B1 value is:", MS.PPI.Optimal_Alpha))
 
