@@ -10,6 +10,7 @@ library(vegan)
 library(terra)
 library(dplyr)
 library(here) # Ensures dynamic, drive-agnostic pathing
+library(parallel)
 
 ### 1. Path definitions ####
 
@@ -84,9 +85,10 @@ KiliNP_LandCover_Raster <- rasterize(
 ### Grid Search for Optimal TWDTW α ####
 message("Starting two-stage grid search for optimal TWDTW \U03B1 (steepness)...")
 
-# Initialize Active Log File
+# Define the log file path
 log_csv <- file.path(KiliNP_Results, "Kili_NDVI_Alpha_GridSearch_Log.csv")
-write.csv(data.frame(Alpha = numeric(), R2 = numeric(), p_value = numeric()), log_csv, row.names = FALSE)
+
+# ---> CHANGED: Removed the header-only initialization line to prevent accidental overwrites
 
 alpha_coarse_grid <- c(-0.1, -0.3, -0.5, -0.7, -0.9)
 alpha_results <- data.frame(Alpha = numeric(), R2 = numeric(), p_value = numeric())
@@ -123,10 +125,12 @@ for (a in alpha_coarse_grid) {
   
   tmp.permanova <- adonis2(tmp.df$RaosQ ~ tmp.df$Veg_GroundTruth, permutations = 999)
   
-  # Log result to dataframe and immediately write to the CSV checkpoint
+  # Log result to dataframe
   step_result <- data.frame(Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1])
   alpha_results <- rbind(alpha_results, step_result)
-  write.table(step_result, file = log_csv, sep = ",", append = TRUE, col.names = FALSE, row.names = FALSE)
+  
+  # ---> CHANGED: Overwrite the entire CSV with the updated dataframe as a live checkpoint
+  write.csv(alpha_results, file = log_csv, row.names = FALSE)
 }
 
 best.coarse.alpha <- alpha_results$Alpha[which.max(alpha_results$R2)]
@@ -157,10 +161,12 @@ for (a in alpha_fine_grid) {
   
   tmp.permanova <- adonis2(tmp.df$RaosQ ~ tmp.df$Veg_GroundTruth, permutations = 999)
   
-  # Log result to dataframe and immediately write to the CSV checkpoint
+  # Log result to dataframe
   step_result <- data.frame(Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1])
   alpha_results <- rbind(alpha_results, step_result)
-  write.table(step_result, file = log_csv, sep = ",", append = TRUE, col.names = FALSE, row.names = FALSE)
+  
+  # ---> CHANGED: Overwrite the entire CSV with the updated dataframe as a live checkpoint
+  write.csv(alpha_results, file = log_csv, row.names = FALSE)
 }
 
 # Sort final results to show best at the top
@@ -175,5 +181,8 @@ message(paste("The absolute optimal \U03B1 value is:", Kili_NDVI_Optimal_Alpha))
 
 # Save the numerical optimal alpha as an RDS object
 saveRDS(Kili_NDVI_Optimal_Alpha, file.path(KiliNP_Results, "Kili_NDVI_Optimal_Alpha.rds"))
+
+# ---> NEW: Export the final, sorted dataframe to guarantee the log is complete and ordered
+write.csv(alpha_results, file = log_csv, row.names = FALSE)
 
 message("Grid search complete and exported successfully.")
