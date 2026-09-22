@@ -1,6 +1,6 @@
 ############################################################################ ###
 ### Elliot Samuel Shayle - University of Marburg                               #
-### 03.3_Kilimanjaro_NDVI_α_Grid-search.R                                      #
+### 04.3_Kilimanjaro_PPI_α_Grid-search.R                                       #
 ### TWDTW α (Steepness) Optimization via Transect Grid Search                  #
 ############################################################################ ###
 
@@ -28,12 +28,12 @@ dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 message("Importing Spatial Objects for Transect Subsetting...")
 
 # 2. Import Spatial Vectors
-kili.tiling.grid <- vect(file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON")) # Load it back in
+kili.tiling.grid <- vect(file.path(KiliNP_Processed, "KiliNP_Tiling_Grid_Polygons.geoJSON"))
 transect_line <- vect(file.path(KiliNP_Processed, "KiliNP_Transect_Line.geojson"))
 KiliNP_LandCover_Vector <- vect(file.path(KiliNP_Input, "Kili Ground Truthing Land Cover Classifications", "VegAug1_KILI_SES_withnewcof.shp"))
 
-# 3. Import Full Cleaned NDVI Timeseries
-KiliNP_Timeseries_Clean <- rast(file.path(KiliNP_Processed, "KiliNP_2017-2021_Cropped_&_Masked.tif"))
+# 3. Import Full Cleaned PPI Timeseries
+KiliNP_PPI_Timeseries_SG <- rast(file.path(KiliNP_Processed, "KiliNP_PPI_2017-2021_Timeseries_SG-filtered.tif"))
 
 # Ensure the transect line shares the exact CRS of the tiling grid
 if (crs(transect_line) != crs(kili.tiling.grid)) {
@@ -43,9 +43,9 @@ if (crs(transect_line) != crs(kili.tiling.grid)) {
 # 4. Extract the Time Vector dynamically from layer names
 Kili.dates <- as.Date(
   paste0(
-    sub(" - .*", "", names(KiliNP_Timeseries_Clean)), "-",
-    match(sub(".* - ", "", names(KiliNP_Timeseries_Clean)), month.name),
-    "-01"
+    sub(" - .*", "", names(KiliNP_PPI_Timeseries_SG)), "-",
+    match(sub(".* - ", "", names(KiliNP_PPI_Timeseries_SG)), month.name),
+    "-15"
   ),
   format = "%Y-%m-%d"
 )
@@ -59,9 +59,10 @@ transect_tiles <- kili.tiling.grid[transect_line, ]
 # Dissolve the selected tiles into a single continuous polygon for easy cropping
 transect_poly <- aggregate(transect_tiles)
 
-message("Cropping and masking NDVI timeseries to transect footprint...")
-transect_ts <- crop(KiliNP_Timeseries_Clean, transect_poly)
+message("Cropping and masking PPI timeseries to transect footprint...")
+transect_ts <- crop(KiliNP_PPI_Timeseries_SG, transect_poly)
 transect_ts <- mask(transect_ts, transect_poly)
+transect_ts <- trim(transect_ts)
 
 # Create a spatial template for the Land Cover rasterisation
 transect_mean <- app(transect_ts, fun = mean, na.rm = TRUE)
@@ -75,7 +76,7 @@ if (crs(transect_mean) != crs(KiliNP_LandCover_Vector)){
 }
 
 # Rasterise using the transect mean as the precise spatial template
-
+# (Retains raw original 1-19 numerical grid codes)
 KiliNP_LandCover_Raster <- rasterize(
   KiliNP_LandCover_Vector,
   transect_mean,
@@ -86,9 +87,7 @@ KiliNP_LandCover_Raster <- rasterize(
 message("Starting two-stage grid search for optimal TWDTW \U03B1 (steepness)...")
 
 # Define the log file path
-log_csv <- file.path(KiliNP_Results, "Kili_NDVI_Alpha_GridSearch_Log.csv")
-
-# ---> CHANGED: Removed the header-only initialization line to prevent accidental overwrites
+log_csv <- file.path(KiliNP_Results, "Kili_PPI_Alpha_GridSearch_Log.csv")
 
 alpha_coarse_grid <- c(-0.1, -0.3, -0.5, -0.7, -0.9)
 alpha_results <- data.frame(Alpha = numeric(), R2 = numeric(), p_value = numeric())
@@ -104,7 +103,7 @@ for (a in alpha_coarse_grid) {
     alpha = 2,
     na.tolerance = 0,
     simplify = 2,
-    np = max(1, detectCores() - 2), 
+    np = max(1, detectCores() / 2), 
     progBar = FALSE,
     method = "multidimension",
     dist_m = "twdtw",
@@ -129,8 +128,12 @@ for (a in alpha_coarse_grid) {
   step_result <- data.frame(Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1])
   alpha_results <- rbind(alpha_results, step_result)
   
-  # ---> CHANGED: Overwrite the entire CSV with the updated dataframe as a live checkpoint
+  # Overwrite the entire CSV with the updated dataframe as a live checkpoint
   write.csv(alpha_results, file = log_csv, row.names = FALSE)
+  
+  # Force R to dump the C++ matrices from RAM before starting the next alpha value
+  rm(tmp.RaoQ, tmp.raster, tmp.stack, tmp.df)
+  gc()
 }
 
 best.coarse.alpha <- alpha_results$Alpha[which.max(alpha_results$R2)]
@@ -147,7 +150,7 @@ for (a in alpha_fine_grid) {
   
   tmp.RaoQ <- paRao(
     x = transect_ts, time_vector = Kili.dates, window = 3, alpha = 2,
-    na.tolerance = 0, simplify = 2, np = max(1, detectCores() - 2), progBar = FALSE, 
+    na.tolerance = 0, simplify = 2, np = max(1, detectCores() / 2), progBar = FALSE, 
     method = "multidimension", dist_m = "twdtw", midpoint = 6, stepness = a, 
     cycle_length = "year", time_scale = "month"
   )
@@ -165,8 +168,12 @@ for (a in alpha_fine_grid) {
   step_result <- data.frame(Alpha = a, R2 = tmp.permanova$R2[1], p_value = tmp.permanova$`Pr(>F)`[1])
   alpha_results <- rbind(alpha_results, step_result)
   
-  # ---> CHANGED: Overwrite the entire CSV with the updated dataframe as a live checkpoint
+  # Overwrite the entire CSV with the updated dataframe as a live checkpoint
   write.csv(alpha_results, file = log_csv, row.names = FALSE)
+  
+  # Force R to dump the C++ matrices from RAM before starting the next alpha value
+  rm(tmp.RaoQ, tmp.raster, tmp.stack, tmp.df)
+  gc()
 }
 
 # Sort final results to show best at the top
@@ -174,15 +181,16 @@ alpha_results <- alpha_results[order(-alpha_results$R2), ]
 print("Full Grid Search Complete. Results:")
 print(alpha_results)
 
-Kili_NDVI_Optimal_Alpha <- alpha_results$Alpha[1]
-message(paste("The absolute optimal \U03B1 value is:", Kili_NDVI_Optimal_Alpha))
+# ---> CHANGED: Object renamed for PPI
+Kili_PPI_Optimal_Alpha <- alpha_results$Alpha[1]
+message(paste("The absolute optimal \U03B1 value is:", Kili_PPI_Optimal_Alpha))
 
 ### Exports ####
 
 # Save the numerical optimal alpha as an RDS object
-saveRDS(Kili_NDVI_Optimal_Alpha, file.path(KiliNP_Results, "Kili_NDVI_Optimal_Alpha.rds"))
+saveRDS(Kili_PPI_Optimal_Alpha, file.path(KiliNP_Results, "Kili_PPI_Optimal_Alpha.rds"))
 
-# ---> NEW: Export the final, sorted dataframe to guarantee the log is complete and ordered
+# Export the final, sorted dataframe to guarantee the log is complete and ordered
 write.csv(alpha_results, file = log_csv, row.names = FALSE)
 
-message("Grid search complete and exported successfully.")
+message("PPI Grid search complete and exported successfully.")
