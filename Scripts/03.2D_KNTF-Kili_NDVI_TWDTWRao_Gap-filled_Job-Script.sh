@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=KNCF-Kili_NDVI_ClassicRao_Gap-filled
-#SBATCH --output=logs/KNCF_%A_%a.out
-#SBATCH --error=logs/KNCF_%A_%a.err
+#SBATCH --job-name=KNTF-Kili_NDVI_TWDTWRao_Gap-filled
+#SBATCH --output=logs/KNTF_%A_%a.out
+#SBATCH --error=logs/KNTF_%A_%a.err
 
 #SBATCH --array=1-2000
 
@@ -15,4 +15,4 @@ module load R/4.1.2
 
 cd ~/TWDTW_Paper/Scripts
 
-Rscript "03.1B_Kilimanjaro_Classic-RaoQ_SG-Filtered.R"
+Rscript "03.2B_Kilimanjaro_TWDTW-RaoQ_SG-Filtered.R"

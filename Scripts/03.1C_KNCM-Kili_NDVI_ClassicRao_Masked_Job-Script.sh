@@ -13,6 +13,6 @@ module purge
 module load gnu9/9.4.0
 module load R/4.1.2
 
-cd "~/TWDTW_Paper/Scripts"
+cd ~/TWDTW_Paper/Scripts
 
 Rscript "03.1A_Kilimanjaro_Classic-RaoQ_Masked.R"
