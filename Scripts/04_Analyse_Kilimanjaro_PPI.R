@@ -23,6 +23,8 @@ library(terra)
 KiliNP_Results <- file.path(Results, "Kilimanjaro")
 dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 
+kili.cores <- max(1, detectCores() - 2)
+
 # Explicitly set the input directory to the external drive to manage storage
 
 KiliNP_PPI_Input <- "D:/Elliot Shayle/Kilimanjaro Geodata/Surface Reflectance Rasters" # Temporary location because my computer is low on storage
@@ -257,34 +259,20 @@ writeRaster(
 
 KiliNP_PPI_Timeseries <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries.tif"))
 
-# ### Mask pixels in the raster stack which don't have a complete timeseries of data
-# ## Only pixels with a complete set of data for every layer are suitable for analysis
-# # There are many pixels with NA values scattered throughout the raster stack
-# # Create logical mask: TRUE only where ALL layers are non-NA
-# # I'm making the mask from just the NIR band, but as all bands have the same coverage, that's okay
-# 
-# Kili.pixel.mask <- app(KiliNP_NIR_Timeseries, function(x) all(!is.na(x))) # Will consume lots of RAM
-# 
-# # Mask out incomplete pixels (FALSE becomes NA)
-# 
-# KiliNP_Blue_Timeseries_Clean <- mask(KiliNP_Blue_Timeseries, Kili.pixel.mask, maskvalues = 0) # This is very computationally challenging, run on HPC
-# KiliNP_Green_Timeseries_Clean <- mask(KiliNP_Green_Timeseries, Kili.pixel.mask, maskvalues = 0)
-# KiliNP_Red_Timeseries_Clean <- mask(KiliNP_Red_Timeseries, Kili.pixel.mask, maskvalues = 0)
-# KiliNP_NIR_Timeseries_Clean <- mask(KiliNP_NIR_Timeseries, Kili.pixel.mask, maskvalues = 0)
-# 
-# # Export rasters so I don't have to calculate it every time
-# 
-# writeRaster(KiliNP_Blue_Timeseries_Clean, file.path(KiliNP_PPI_Processed, "KiliNP_BlueBand_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
-# writeRaster(KiliNP_Green_Timeseries_Clean, file.path(KiliNP_PPI_Processed, "KiliNP_GreenBand_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
-# writeRaster(KiliNP_Red_Timeseries_Clean, file.path(KiliNP_PPI_Processed, "KiliNP_RedBand_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
-# writeRaster(KiliNP_NIR_Timeseries_Clean, file.path(KiliNP_PPI_Processed, "KiliNP_NIRBand_2017-2021_Cropped_&_Masked.tif"), overwrite = TRUE)
-# 
-# # And then load back in the rasters
-# 
-# KiliNP_Blue_Timeseries_Clean <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_BlueBand_2017-2021_Cropped_&_Masked.tif")) # Load it in
-# KiliNP_Green_Timeseries_Clean <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_GreenBand_2017-2021_Cropped_&_Masked.tif")) # Load it in
-# KiliNP_Red_Timeseries_Clean <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_RedBand_2017-2021_Cropped_&_Masked.tif")) # Load it in
-# KiliNP_NIR_Timeseries_Clean <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_NIRBand_2017-2021_Cropped_&_Masked.tif")) # Load it in
+### Parallel Track: Masked (Non-Gap-Filled) Pipeline ####
+
+### Mask pixels in the raster stack which don't have a complete timeseries of data
+message("Creating parallel non-gap-filled (Masked) pipeline...")
+
+# Create logical mask: TRUE only where ALL layers are non-NA
+Kili.pixel.mask <- app(KiliNP_PPI_Timeseries, function(x) all(!is.na(x)))
+
+# Mask out incomplete pixels (FALSE becomes NA)
+KiliNP_PPI_Timeseries_Masked <- mask(KiliNP_PPI_Timeseries, Kili.pixel.mask, maskvalues = 0)
+
+# Export and load raster so I don't have to calculate it every time
+writeRaster(KiliNP_PPI_Timeseries_Masked, file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries_Masked.tif"), overwrite = TRUE)
+KiliNP_PPI_Timeseries_Masked <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries_Masked.tif"))
 
 ### Run Savitzky-Golay filtering ####
 ## 1. Define the gap-filling function
@@ -406,59 +394,42 @@ stopifnot(length(Kili.dates) == nlyr(KiliNP_PPI_Timeseries.SGfilter))
 message(paste("Temporal length:", length(Kili.dates), "layers"))
 
 ### 1. Shannon-Wiener Index ####
-## As in Macchia Sacra, collapse the time series to mean annual trajectory first
 
-message("Calculating Shannon-Wiener diversity index for Kilimanjaro...")
+message("Calculating Shannon-Wiener diversity index for Masked and SG tracks...")
 
-KiliNP_Mean_PPI_Raster <- app(KiliNP_PPI_Timeseries.SGfilter, fun = mean, na.rm = TRUE)
+## For the masked raster
 
-# Export raster so I don't have to calculate it every time
+KiliNP_Mean_PPI_Masked <- app(KiliNP_PPI_Timeseries_Masked, fun = mean, na.rm = TRUE)
+writeRaster(KiliNP_Mean_PPI_Masked, file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_Masked.tif"), overwrite = TRUE)
+KiliNP_Mean_PPI_Masked <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_Masked.tif"))
 
-writeRaster(KiliNP_Mean_PPI_Raster, file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI-SGfiltered.tif"), overwrite = TRUE)
+KiliNP_Mean_PPI_Masked2dec <- trim(round(KiliNP_Mean_PPI_Masked, 2))
+KiliNP.PPI.ShannonH.Masked.matrix <- rasterdiv::ShannonS(terra::as.matrix(KiliNP_Mean_PPI_Masked2dec, wide = TRUE), window = 3, na.tolerance = 0)
 
-# And then load back in the raster
+KiliNP_PPI_ShannonH_Masked <- rast(KiliNP.PPI.ShannonH.Masked.matrix)
+ext(KiliNP_PPI_ShannonH_Masked) <- ext(KiliNP_Mean_PPI_Masked2dec)
+crs(KiliNP_PPI_ShannonH_Masked) <- crs(KiliNP_Mean_PPI_Masked2dec)
+names(KiliNP_PPI_ShannonH_Masked) <- "ShannonH_Masked"
 
-KiliNP_Mean_PPI_Raster <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI-SGfiltered.tif")) # Load it in
+writeRaster(KiliNP_PPI_ShannonH_Masked, file.path(KiliNP_Results, "Kilimanjaro_PPI_ShannonH_Masked.tif"), overwrite = TRUE)
+KiliNP_PPI_ShannonH_Masked <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_ShannonH_Masked.tif"))
 
-# Round to 2 decimals to avoid numerical saturation
+## For the gap-filled raster
 
-KiliNP_Mean_PPI_Raster2dec <- round(KiliNP_Mean_PPI_Raster, 2)
-KiliNP_Mean_PPI_Raster2dec <- trim(KiliNP_Mean_PPI_Raster2dec) # Trimming it to avoid unnecessary computation
+KiliNP_Mean_PPI_SG <- app(KiliNP_PPI_Timeseries.SGfilter, fun = mean, na.rm = TRUE)
+writeRaster(KiliNP_Mean_PPI_SG, file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_SG.tif"), overwrite = TRUE)
+KiliNP_Mean_PPI_SG <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_SG.tif"))
 
-# Export and reload the rounded raster so I don't have to calculate it every time
+KiliNP_Mean_PPI_SG2dec <- trim(round(KiliNP_Mean_PPI_SG, 2))
+KiliNP.PPI.ShannonH.SG.matrix <- rasterdiv::ShannonS(terra::as.matrix(KiliNP_Mean_PPI_SG2dec, wide = TRUE), window = 3, na.tolerance = 0)
 
-writeRaster(KiliNP_Mean_PPI_Raster2dec, file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_Rounded2DP-SGfiltered.tif"), overwrite = TRUE)
-KiliNP_Mean_PPI_Raster2dec <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_MeanPPI_Rounded2DP-SGfiltered.tif")) # Load it back in
+KiliNP_PPI_ShannonH_SG <- rast(KiliNP.PPI.ShannonH.SG.matrix)
+ext(KiliNP_PPI_ShannonH_SG) <- ext(KiliNP_Mean_PPI_SG2dec)
+crs(KiliNP_PPI_ShannonH_SG) <- crs(KiliNP_Mean_PPI_SG2dec)
+names(KiliNP_PPI_ShannonH_SG) <- "ShannonH_SG"
 
-# Run ShannonS
-
-KiliNP.PPI.ShannonH.matrix <- rasterdiv::ShannonS(
-  x = terra::as.matrix(KiliNP_Mean_PPI_Raster2dec, wide = TRUE), # The function here converts my raster to a matrix suitable for analysis
-  window = 3,
-  na.tolerance = 0
-)
-
-## Now turn the matrix of Shannon H values into a spatial raster
-# Put it in a raster signature
-
-KiliNP_PPI_ShannonH_Raster <- rast(KiliNP.PPI.ShannonH.matrix)
-
-# Make the raster's extent and CRS match the original raster
-
-ext(KiliNP_PPI_ShannonH_Raster) <- ext(KiliNP_Mean_PPI_Raster2dec)
-crs(KiliNP_PPI_ShannonH_Raster) <- crs(KiliNP_Mean_PPI_Raster2dec)
-
-names(KiliNP_PPI_ShannonH_Raster) <- "Shannon's H"
-
-# Export the raster or reload it if necessary
-
-writeRaster(
-  KiliNP_PPI_ShannonH_Raster,
-  filename = file.path(KiliNP_Results, "Kilimanjaro_MeanPPI_ShannonH-SGfiltered.tif"),
-  overwrite = TRUE
-)
-
-KiliNP_PPI_ShannonH_Raster <- rast(file.path(KiliNP_Results, "Kilimanjaro_MeanPPI_ShannonH-SGfiltered.tif")) # Load it back in
+writeRaster(KiliNP_PPI_ShannonH_SG, file.path(KiliNP_Results, "Kilimanjaro_PPI_ShannonH_SG.tif"), overwrite = TRUE)
+KiliNP_PPI_ShannonH_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_ShannonH_SG.tif"))
 
 ### 2. Classic Rao's Q  ####
 ## Due to the large size of the raster, I need to tile it so that it can be run
@@ -524,19 +495,30 @@ plot(kili.tiling.grid) # Plot it to make sure that it's loaded in
 RaoQ.window.size <- 3
 kili.tile.overlap <- floor(RaoQ.window.size / 2)
 
-# Create a directory to put the tiles in
+## Create directories and tiles
+# For the masked raster
 
-#kili.tile.dir <- file.path(KiliNP_Processed,"Mean NDVI tiles") # I disabled this line so I don't overwrite my 72 larger tiles
-kili.tile.dir <- file.path(KiliNP_PPI_Processed,"Mean_PPI_Kili_SG_Tiles")
-dir.create(kili.tile.dir, recursive = TRUE, showWarnings = FALSE)
+kili.tile.dir.masked <- file.path(KiliNP_PPI_Processed, "Kili_Tiles_PPI_Masked")
+dir.create(kili.tile.dir.masked, recursive = TRUE, showWarnings = FALSE)
 
-## Finally, create the tiles
+makeTiles(
+  trim(KiliNP_Mean_PPI_Masked), 
+  y = kili.tiling.grid, 
+  buffer = kili.tile.overlap, 
+  filename = file.path(kili.tile.dir.masked, "KiliNP_MeanPPI_Masked_Tile-.tif"),
+  overwrite = FALSE
+)
 
-kili.tiles <- makeTiles(
-  trimmed.KiliNP_Mean_PPI_Raster, # Trimmed for easier computation
-  y = kili.tiling.grid, # Specifies how the tiles should be allocated
-  buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
-  filename = file.path(kili.tile.dir, "KiliNP-SG_MeanPPI_Tile-.tif"),
+# For the gap-filled raster
+
+kili.tile.dir.sg <- file.path(KiliNP_PPI_Processed, "Kili_Tiles_PPI_SG-Filtered")
+dir.create(kili.tile.dir.sg, recursive = TRUE, showWarnings = FALSE)
+
+makeTiles(
+  trim(KiliNP_Mean_PPI_SG), 
+  y = kili.tiling.grid, 
+  buffer = kili.tile.overlap, 
+  filename = file.path(kili.tile.dir.sg, "KiliNP_MeanPPI_SG_Tile-.tif"),
   overwrite = FALSE
 )
 
@@ -547,195 +529,28 @@ kili.tiles <- makeTiles(
 kili.rao.dir  <- file.path(KiliNP_Processed,"MeanPPI_Rao-utputs") 
 dir.create(kili.rao.dir, recursive = TRUE, showWarnings = FALSE)
  
-# ## Create a computing cluster to parallelise the calculation at the tile level
-# # Set the number of cores to be used by the cluster
-# 
-# kili.cores <- max(1, detectCores() - 2)
-# 
-# # Initialise a log file so I can actually see what's going on
-# 
-# kili.log.file <- file.path(kili.rao.dir, "KiliNP_RaoQ_processing_log.txt")
-# 
-# # If the log file doesn't exist already, create one
-# 
-# if(!file.exists(kili.log.file)) file.create(kili.log.file)
-# 
-# # Create the cluster (alliterative and punny names are mandatory)
-# 
-# kili.cluster <- makeCluster(kili.cores)
-# 
-# clusterEvalQ(kili.cluster, {
-#   library(terra)
-#   library(rasterdiv)
-# })
-# 
-# clusterExport(kili.cluster, c(
-#   "kili.tiles",
-#   "kili.rao.dir",
-#   "RaoQ.window.size",
-#   "kili.log.file"
-# ))
-# 
-# # Identify tiles still needing processing (so resources aren't wasted processing tiles already done)
-# 
-# tile.outputs <- file.path(
-#   kili.rao.dir,
-#   paste0("KiliNP_Classic-RaoQ_Tile-", seq_along(kili.tiles), ".tif")
-# )
-# 
-# tiles.to.process <- which(!file.exists(tile.outputs))
-# 
-# cat(length(tiles.to.process), "tiles remaining.\n")
-
-## Now actually run the code
-# This version creates a process for each CPU core and runs each tile as a single process
-## REVIEWERS: Due to the CPU overhead of this workload, I ultimately decided to run it on my university's supercomputer instead
-# Please see "03.1C_Kilimanjaro_Classical-RaoQ_MaRC3a.R" for the job file I submitted
-# 
-# kili.classic.rao.results <- parLapply( # Function call
-#   kili.cluster,
-#   tiles.to.process,
-#   function(i){
-#     
-#     library(terra)
-#     library(rasterdiv)
-#     
-#     log_file <- kili.log.file
-#     
-#     log_msg <- function(msg){
-#       cat(
-#         paste0(Sys.time(), " | Worker ", Sys.getpid(), " | ", msg, "\n"),
-#         file = log_file,
-#         append = TRUE
-#       )
-#     }
-#     
-#     out.file <- file.path(
-#       kili.rao.dir,
-#       paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
-#     )
-#     
-#     if(file.exists(out.file)){
-#       log_msg(paste0("Tile", i, "already exists — skipped"))
-#       return(NULL)
-#     }
-#     
-#     log_msg(paste("Tile", i, "STARTED"))
-#     
-#     tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
-#     
-#     tmp.result <- paRao(
-#       tmp.tile,
-#       window = RaoQ.window.size,
-#       alpha = 2,
-#       simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
-#       method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
-#       np = 1 # Explicitly prevents nested parallelisation (or set above 1 if you want to melt your CPU)
-#     )
-#     
-#     tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
-#     
-#     writeRaster(
-#       tmp.rao_raster,
-#       filename = out.file,
-#       overwrite = TRUE
-#     )
-#     
-#     rm(tmp.tile,tmp.result,tmp.rao_raster)
-#     gc()
-#     
-#     log_msg(paste("Tile №", i, "'s classic Rao's Q calculated successfully."))
-#     
-#     return(NULL) # So that each worker doesn't fill up R's memory with bloat upon completion
-#   }
-# )
-# 
-# ## This for loop is an alternative computational approach which uses all cores to work sequentially over each tile
-# # This version seems computationally safer because each tile outputted is like a mini-checkpoint in the event that computation is interrupted
-# 
-# for(i in seq_along(kili.tiles)){
-#   
-#   log_file <- kili.log.file
-#   
-#   log_msg <- function(msg){
-#     cat(
-#       paste0(Sys.time(), " | Tile ", i, " | ", msg, "\n"),
-#       file = log_file,
-#       append = TRUE
-#     )
-#   }
-#   
-#   out.file <- file.path(
-#     kili.rao.dir,
-#     paste0("KiliNP_Classic-RaoQ_Tile-", i, ".tif")
-#   )
-#   
-#   # Skip tiles which already exist (prevents recomputation)
-#   
-#   if(file.exists(out.file)){
-#     log_msg("already exists — skipped")
-#     next
-#   }
-#   
-#   log_msg("STARTED")
-#   
-#   tmp.tile <- rast(kili.tiles[i]) # Load in the raster for processing
-#   
-#   tmp.result <- paRao(
-#     tmp.tile,
-#     window = RaoQ.window.size,
-#     alpha = 2,
-#     simplify = 2, # This is necessary to maintain consistency with the Shannon's H test (keeps just 2 decimal places)
-#     method = "classic", # Because this is not looking at timeseries Rao's Q, just regular unidimensional Rao's Q
-#     np = kili.cores # Parallelise INSIDE paRao for faster per-tile processing
-#   )
-#   
-#   tmp.rao_raster <- tmp.result[[1]][[1]] # Subsetting avoids hardcoding "$window.3$alpha.2"
-#   
-#   writeRaster(
-#     tmp.rao_raster,
-#     filename = out.file,
-#     overwrite = TRUE
-#   )
-#   
-#   rm(tmp.tile,tmp.result,tmp.rao_raster)
-#   gc()
-#   
-#   log_msg("classic Rao's Q calculated successfully.")
-# }
-
 ### Step 3: Demosaic the classical Rao's Q tiles
-## Gather up all the files
+# For the masked raster
 
-kili.rao.files <- list.files(
-  kili.rao.dir,
-  pattern = "KiliNP_PPI_Classic-RaoQ_SG_Tile-",
+kili.rao.files.masked <- list.files(
+  file.path(KiliNP_PPI_Processed, "Kili_Tiles_PPI_Masked"), 
+  pattern = "KiliNP_MeanPPI_Masked_Tile-",
   full.names = TRUE
 )
+KiliNP_PPI_Classic_RaoQ_Masked <- terra::mosaic(sprc(lapply(kili.rao.files.masked, rast)))
+writeRaster(KiliNP_PPI_Classic_RaoQ_Masked, file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ_Masked.tif"), overwrite = TRUE)
+KiliNP_PPI_Classic_RaoQ_Masked <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ_Masked.tif"))
 
-# Tell R to apply the `rast` function to them 
+# For the gap-filled raster
 
-kili.rao.tiles <- lapply(kili.rao.files, rast)
-
-# Convert them into a spatial raster collection:
-
-kili.rao.tiles <- sprc(kili.rao.tiles)
-
-# Run the demosaic function (which is curiously called `mosaic`)
-
-KiliNP_PPI_Classic_RaoQ <- terra::mosaic(kili.rao.tiles)
-
-# Export the final raster, and load it back in if necessary
-
-writeRaster(
-  KiliNP_PPI_Classic_RaoQ,
-  file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ-SGfiltered.tif"),
-  overwrite = TRUE
+kili.rao.files.sg <- list.files(
+  file.path(KiliNP_PPI_Processed, "Kili_Tiles_PPI_SG-Filtered"), 
+  pattern = "KiliNP_MeanPPI_SG_Tile-",
+  full.names = TRUE
 )
-
-KiliNP_PPI_Classic_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ-SGfiltered.tif")) # Load in the raster
-
-plot(KiliNP_PPI_Classic_RaoQ) # Plot it! (Good for data exploration and checking that the raster loaded in as normal)
+KiliNP_PPI_Classic_RaoQ_SG <- terra::mosaic(sprc(lapply(kili.rao.files.sg, rast)))
+writeRaster(KiliNP_PPI_Classic_RaoQ_SG, file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ_SG.tif"), overwrite = TRUE)
+KiliNP_PPI_Classic_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_Classic-RaoQ_SG.tif"))
 
 ### 3. Rao's Q with TWDTW ####
 
@@ -745,187 +560,113 @@ message("Calculating Rao's Q with TWDTW distance for Kilimanjaro...")
 # This tiling script is copied from Step 1 of the classical Rao's Q analysis
 # Some objects like "kili.tiling.grid" are assumed to be loaded, and "kili.tile.dir" is overwritten
 
-# Create a directory to put the tiles in
+# For the masked raster
 
-kili.twdtw.rao.dir <- file.path(KiliNP_PPI_Processed,"Timeseries_PPI_Kili_SG_Tiles")
-dir.create(kili.twdtw.rao.dir, recursive = TRUE, showWarnings = FALSE)
+kili.twdtw.tile.dir.masked <- file.path(KiliNP_PPI_Processed, "Kili_TS_Tiles_PPI_Masked")
+dir.create(kili.twdtw.tile.dir.masked, recursive = TRUE, showWarnings = FALSE)
 
-# Create the timeseries tiles
-
-kili.twdtw.tiles <- makeTiles(
-  trim(KiliNP_PPI_Timeseries.SGfilter), # Trimmed for easier computation
-  y = kili.tiling.grid, # Make sure this is still loaded in from the previous step!
-  buffer = kili.tile.overlap, # Adds a little buffer so Rao's Q can compute without edge NAs
-  filename = file.path(kili.twdtw.rao.dir, "KiliNP-SG_TimeseriesPPI_Tile-.tif"),
+makeTiles(
+  trim(KiliNP_PPI_Timeseries_Masked), 
+  y = kili.tiling.grid, 
+  buffer = kili.tile.overlap, 
+  filename = file.path(kili.twdtw.tile.dir.masked, "KiliNP_TS_PPI_Masked_Tile-.tif"),
   overwrite = FALSE
 )
 
-## Step 2: Submit the tiles for processing on University of Marburg's supercomputer
-# Please see script 03.2A_Kilimanjaro_TWDTW-RaoQ_MaRC3a.R for the actual job scripts used
-# If you wish to attempt computation on your local machine, then please see the code below
+# For the gap-filled raster
 
-######### Beginning of not actually used section
-# Kili_Rao_TWDTW <- paRao(
-#   x = KiliNP_Timeseries_Clean,
-#   time_vector = Kili.dates,
-#   window = 3,
-#   alpha = 2,
-#   na.tolerance = 0,
-#   simplify = 2,
-#   np = detectCores() -1,
-#   progBar = TRUE,
-#   method = "multidimension",
-#   dist_m = "twdtw",
-#   midpoint = 6,          # Midpoint of annual cycle (June)
-#   stepness = -0.5,
-#   cycle_length = "year",
-#   time_scale = "month"   # Now explicitly monthly data
-# )
-# 
-# writeRaster(
-#   Kili_Rao_TWDTW$window.3$alpha.2,
-#   filename = file.path(KiliNP_Results, "KiliNP_RaoQ_TWDTW.tif"),
-#   overwrite = TRUE
-# )
-######### End of not actually used section
+kili.twdtw.tile.dir.sg <- file.path(KiliNP_PPI_Processed, "Kili_TS_Tiles_PPI_SG-Filtered")
+dir.create(kili.twdtw.tile.dir.sg, recursive = TRUE, showWarnings = FALSE)
+
+makeTiles(
+  trim(KiliNP_PPI_Timeseries.SGfilter), 
+  y = kili.tiling.grid, 
+  buffer = kili.tile.overlap, 
+  filename = file.path(kili.twdtw.tile.dir.sg, "KiliNP_TS_PPI_SG_Tile-.tif"),
+  overwrite = FALSE
+)
 
 ## Step 3: Demosaic the raster tiles to create a final TWDTW Rao's Q raster
-## Gather up all the files
+# For the masked raster
 
-kili.twdtw.rao.files <- list.files(
-  file.path(KiliNP_Processed,"TWDTWPPI_Rao-utputs") ,
-  pattern = "KiliNP_PPI_TWDTW-RaoQ_SG_Tile",
+kili.twdtw.rao.files.masked <- list.files(
+  file.path(KiliNP_PPI_Processed, "Kili_TS_Tiles_PPI_Masked"), 
+  pattern = "KiliNP_TS_PPI_Masked_Tile-",
   full.names = TRUE
 )
+KiliNP_PPI_TWDTW_RaoQ_Masked <- terra::mosaic(sprc(lapply(kili.twdtw.rao.files.masked, rast)))
+writeRaster(KiliNP_PPI_TWDTW_RaoQ_Masked, file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ_Masked.tif"), overwrite = TRUE)
+KiliNP_PPI_TWDTW_RaoQ_Masked <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ_Masked.tif"))
 
-# Tell R to apply the `rast` function to them 
+# For the gap-filled raster
 
-kili.twdtw.rao.files <- lapply(kili.twdtw.rao.files, rast)
-
-# Convert them into a spatial raster collection:
-
-kili.twdtw.rao.files <- sprc(kili.twdtw.rao.files)
-
-# Run the demosaic function (which is curiously called `mosaic`)
-
-KiliNP_PPI_TWDTW_RaoQ <- terra::mosaic(kili.twdtw.rao.files)
-
-# Export the final raster, and load it back in if necessary
-
-writeRaster(
-  KiliNP_PPI_TWDTW_RaoQ,
-  file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ-SGfiltered.tif"),
-  overwrite = TRUE
+kili.twdtw.rao.files.sg <- list.files(
+  file.path(KiliNP_PPI_Processed, "Kili_TS_Tiles_PPI_SG-Filtered"), 
+  pattern = "KiliNP_TS_PPI_SG_Tile-",
+  full.names = TRUE
 )
+KiliNP_PPI_TWDTW_RaoQ_SG <- terra::mosaic(sprc(lapply(kili.twdtw.rao.files.sg, rast)))
+writeRaster(KiliNP_PPI_TWDTW_RaoQ_SG, file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ_SG.tif"), overwrite = TRUE)
+KiliNP_PPI_TWDTW_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ_SG.tif"))
 
-KiliNP_PPI_TWDTW_RaoQ <- rast(file.path(KiliNP_Results, "Kilimanjaro_PPI_TWDTW-RaoQ-SGfiltered.tif")) # Load in the raster
-
-plot(KiliNP_PPI_TWDTW_RaoQ)
-
-### Export rasters for comparison ####
+### Export all rasters for comparison ####
 
 KiliNP_PPI_Comparison_Rasters <- c(
-  trim(KiliNP_Mean_PPI_Raster), # Trimmed so that it matches the extent of the other rasters
-  KiliNP_PPI_ShannonH_Raster,
-  KiliNP_PPI_Classic_RaoQ,
-  KiliNP_PPI_TWDTW_RaoQ
+  trim(KiliNP_Mean_PPI_Masked), 
+  KiliNP_PPI_ShannonH_Masked,
+  KiliNP_PPI_Classic_RaoQ_Masked,
+  KiliNP_PPI_TWDTW_RaoQ_Masked,
+  KiliNP_PPI_ShannonH_SG,
+  KiliNP_PPI_Classic_RaoQ_SG,
+  KiliNP_PPI_TWDTW_RaoQ_SG
 )
 
-names(KiliNP_PPI_Comparison_Rasters) <- c( # This sets nice layer names for easier browsing
-  "Sentinel-2 PPI",
-  "Shannon's H",
-  "Classic Rao's Q",
-  "TWDTW Rao's Q"
+names(KiliNP_PPI_Comparison_Rasters) <- c(
+  "Sentinel-2_MeanPPI",
+  "ShannonH_Masked",
+  "RaosQ_Classic_Masked",
+  "RaosQ_TWDTW_Masked",
+  "ShannonH_SG",
+  "RaosQ_Classic_SG",
+  "RaosQ_TWDTW_SG"
 )
 
-writeRaster( # So I don't have to compute it every time
+writeRaster(
   KiliNP_PPI_Comparison_Rasters,
-  filename = file.path(KiliNP_Results, "KiliNP_PPI_Diversity_Comparison-SGfiltered.tif"),
+  filename = file.path(KiliNP_Results, "KiliNP_PPI_Diversity_Comparison.tif"),
   overwrite = TRUE
 )
+KiliNP_PPI_Comparison_Rasters <- rast(file.path(KiliNP_Results, "KiliNP_PPI_Diversity_Comparison.tif"))
 
-KiliNP_PPI_Comparison_Rasters <- rast(file.path(KiliNP_Results, "KiliNP_PPI_Diversity_Comparison-SGfiltered.tif")) # Load it back in
-
-png(file.path(KiliNP_Results, "KiliNP_PPI_Indices_Comparison.png"), # Exported for the paper
-    width = 2560, height = 1440, res = 150)
-
-plot(KiliNP_PPI_Comparison_Rasters) # Plot it in a file for export
-
+png(file.path(KiliNP_Results, "KiliNP_PPI_Indices_Comparison.png"), width = 2560, height = 1440, res = 150)
+plot(KiliNP_PPI_Comparison_Rasters)
 dev.off()
-
-plot(KiliNP_PPI_Comparison_Rasters) # Plot it to see how it looks
+plot(KiliNP_PPI_Comparison_Rasters)
 
 ### Assess index performance using vegetation ground truth ####
 
 message("Assessing diversity indices against vegetation ground truth...")
 
-# Load KiliNP_LandCover_Vector boundary again (this is our land cover ground truth data)
-
-KiliNP_LandCover_Vector <- 
-  vect(file.path(KiliNP_Input,
-                 "/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp")) # Load in the ground truth data
-
-# Ensure CRS matches
-
+KiliNP_LandCover_Vector <- vect(file.path(KiliNP_Input, "/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp"))
 if (crs(KiliNP_PPI_Comparison_Rasters) != crs(KiliNP_LandCover_Vector)){
   KiliNP_LandCover_Vector <- project(KiliNP_LandCover_Vector, crs(KiliNP_PPI_Comparison_Rasters))
 }
 
-# Crop and mask diversity rasters to ground truth extent
+# Crop and mask the ENTIRE comparison stack simultaneously
 
-masked.KiliNP_PPI_ShannonH_Raster <- mask(crop(KiliNP_PPI_ShannonH_Raster, KiliNP_LandCover_Vector), # Crop
-                                      KiliNP_LandCover_Vector) # and mask
-masked.KiliNP_PPI_Classic_RaoQ <- mask(crop(KiliNP_PPI_Classic_RaoQ, KiliNP_LandCover_Vector), 
-                                   KiliNP_LandCover_Vector)
-masked.KiliNP_PPI_TWDTW_RaoQ <- mask(crop(KiliNP_PPI_TWDTW_RaoQ, KiliNP_LandCover_Vector), 
-                                 KiliNP_LandCover_Vector)
-
-## Rasterise vegetation class
-# First I need to update the ground truth vector to use the proper category names
-# I'll use a lookup table
-
-kili.land.cover.lookup <- c( # These are the true categories from Andreas Hemp, 2006
-  "0"  = "Snow/glacier",
-  "1"  = "Agriculture (MAI)",
-  "2"  = "Savannah (SAV)",
-  "3"  = "Swamp",
-  "4"  = "Overgrown clearing",
-  "7"  = "Forest plantation",
-  "9"  = "Riverine",
-  "10" = "Upper montane Erica excelsa forest (FPO Podocarpus disturbed)",
-  "11" = "Subalpine Erica trimera bushland (FED incl FER (Erica forest and bushland))",
-  "12" = "Podocarpus forest (FPO)",
-  "13" = "Subalpine tussock grassland",
-  "14" = "Chagga homegardens (HOM)",
-  "15" = "Alpine Helichrysum vegetation (HEL)",
-  "16" = "Ocotea forest (FOC)",
-  "17" = "Bare rock",
-  "18" = "Sub/lower montane rainforest (FLM)",
-  "19" = "Coffee plantations (COF)"
+masked.KiliNP_PPI_Comparison_Rasters <- mask(
+  crop(KiliNP_PPI_Comparison_Rasters, KiliNP_LandCover_Vector), 
+  KiliNP_LandCover_Vector
 )
 
-kili.land.cover.lookup <- c( # These are combined land cover types to aid the model's performance
-  "0"  = NA,                                     # Exclude: Snow/glacier
-  "1"  = "Anthropogenic",                        # Agriculture (MAI)
-  "2"  = "Dry Natural Vegetation (Savannah)",    # Savannah (SAV)
-  "3"  = NA,                                     # Exclude: Swamp (Azonal/Water-logged)
-  "4"  = "Anthropogenic",                        # Overgrown clearing (Disturbed/Man-made)
-  "7"  = "Anthropogenic",                        # Forest plantation
-  "9"  = NA,                                     # Exclude: Riverine (Azonal)
-  "10" = "Moist/Evergreen Cloud Forest",         # Upper montane Erica excelsa forest
-  "11" = "Alpine/Subalpine Shrub & Grassland",   # Subalpine Erica trimera bushland
-  "12" = "Moist/Evergreen Cloud Forest",         # Podocarpus forest
-  "13" = "Alpine/Subalpine Shrub & Grassland",   # Subalpine tussock grassland
-  "14" = "Anthropogenic",                        # Chagga homegardens
-  "15" = "Alpine/Subalpine Shrub & Grassland",   # Alpine Helichrysum vegetation
-  "16" = "Moist/Evergreen Cloud Forest",         # Ocotea forest
-  "17" = NA,                                     # Exclude: Bare rock
-  "18" = "Moist/Evergreen Cloud Forest",         # Sub/lower montane rainforest
-  "19" = "Anthropogenic"                         # Coffee plantations
+kili.land.cover.lookup <- c( 
+  "0"  = NA, "1"  = "Anthropogenic", "2"  = "Dry Natural Vegetation (Savannah)", "3"  = NA, 
+  "4"  = "Anthropogenic", "7"  = "Anthropogenic", "9"  = NA, "10" = "Moist/Evergreen Cloud Forest", 
+  "11" = "Alpine/Subalpine Shrub & Grassland", "12" = "Moist/Evergreen Cloud Forest", 
+  "13" = "Alpine/Subalpine Shrub & Grassland", "14" = "Anthropogenic", 
+  "15" = "Alpine/Subalpine Shrub & Grassland", "16" = "Moist/Evergreen Cloud Forest", 
+  "17" = NA, "18" = "Moist/Evergreen Cloud Forest", "19" = "Anthropogenic" 
 ) 
-# I'm getting some kind of error when I try and use either lookup table, so we'll assign readable names later
-
-# Rasterise the land cover vector
 
 KiliNP_LandCover_Raster <- rasterize(
   KiliNP_LandCover_Vector,
@@ -936,17 +677,13 @@ KiliNP_LandCover_Raster <- rasterize(
 ### Convert the index rasters to a dataframe for performance analysis ####
 
 KiliNP_Indices_Comparison_Raster <- c(
-  masked.KiliNP_PPI_ShannonH_Raster,
-  masked.KiliNP_PPI_Classic_RaoQ,
-  masked.KiliNP_PPI_TWDTW_RaoQ,
+  masked.KiliNP_PPI_Comparison_Rasters,
   KiliNP_LandCover_Raster
 )
 
 names(KiliNP_Indices_Comparison_Raster) <- c(
-  "ShannonsH",
-  "RaosQ_Classic",
-  "RaosQ_TWDTW",
-  "Veg_GroundTruth_Numeric" # Renamed to reflect integer status
+  names(masked.KiliNP_PPI_Comparison_Rasters),
+  "Veg_GroundTruth_Numeric" 
 )
 
 KiliNP_Indices_Comparison_DF <- as.data.frame(
@@ -954,134 +691,114 @@ KiliNP_Indices_Comparison_DF <- as.data.frame(
   na.rm = TRUE
 )
 
-# Mutate the numeric codes into readable strings
-
 KiliNP_Indices_Comparison_DF.CombinedCoverClasses <- KiliNP_Indices_Comparison_DF
-KiliNP_Indices_Comparison_DF$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)] # Ensure look-up table is set to classic all 19 land cover types
-KiliNP_Indices_Comparison_DF.CombinedCoverClasses$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)] # Ensure look-up table is set to combined classes
-
-# Drop the numeric column to keep the dataframe clean for the PERMANOVA
-
+KiliNP_Indices_Comparison_DF$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)]
+KiliNP_Indices_Comparison_DF.CombinedCoverClasses$Veg_GroundTruth <- kili.land.cover.lookup[as.character(KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric)]
 KiliNP_Indices_Comparison_DF$Veg_GroundTruth_Numeric <- NULL
 
-# colnames(KiliNP_Indices_Comparison_DF) <- c(
-#   "ShannonsH",
-#   "RaosQ_Classic",
-#   "RaosQ_TWDTW",
-#   "Veg_GroundTruth"
-# )
-
 ### Intra class variation exploration:
-## First calculate relevant statistics
-
-# Load required libraries
 
 message("Calculating intra-class variance for original 19 classes...")
-
 KiliNP_Stats_19Classes <- KiliNP_Indices_Comparison_DF %>%
   filter(!is.na(Veg_GroundTruth)) %>%
   group_by(Veg_GroundTruth) %>%
-  summarise(across(c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), \(x) var(x, na.rm = TRUE)))
-
+  summarise(across(c(ShannonH_Masked, RaosQ_Classic_Masked, RaosQ_TWDTW_Masked, ShannonH_SG, RaosQ_Classic_SG, RaosQ_TWDTW_SG), \(x) var(x, na.rm = TRUE)))
 print(KiliNP_Stats_19Classes)
 
 message("Calculating intra-class variance for combined classes...")
-
 KiliNP_Stats_Combined <- KiliNP_Indices_Comparison_DF.CombinedCoverClasses %>%
   filter(!is.na(Veg_GroundTruth)) %>%
   group_by(Veg_GroundTruth) %>%
-  summarise(across(c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), \(x) var(x, na.rm = TRUE)))
-
+  summarise(across(c(ShannonH_Masked, RaosQ_Classic_Masked, RaosQ_TWDTW_Masked, ShannonH_SG, RaosQ_Classic_SG, RaosQ_TWDTW_SG), \(x) var(x, na.rm = TRUE)))
 print(KiliNP_Stats_Combined)
 
-## Generate Comparative Box Plots
-
 message("Plotting box and whisker plots for combined classes...")
-
-# Assuming you created a subset for the combined classes similar to your 19-class subset:
 subset.KiliNP_Combined <- KiliNP_Indices_Comparison_DF.CombinedCoverClasses[sample(which(!is.na(KiliNP_Indices_Comparison_DF.CombinedCoverClasses$Veg_GroundTruth)), 10000), ]
 
 KiliNP_Boxplot_Combined <- subset.KiliNP_Combined %>%
   pivot_longer(
-    cols = c(ShannonsH, RaosQ_Classic, RaosQ_TWDTW), 
+    cols = c(ShannonH_Masked, RaosQ_Classic_Masked, RaosQ_TWDTW_Masked, ShannonH_SG, RaosQ_Classic_SG, RaosQ_TWDTW_SG), 
     names_to = "Index", 
     values_to = "Value"
   ) %>%
   ggplot(aes(x = Veg_GroundTruth, y = Value, fill = Veg_GroundTruth)) +
   geom_boxplot(alpha = 0.7, outlier.alpha = 0.2, outlier.size = 0.5) +
-  facet_wrap(~Index, scales = "free_y") + # Allows each index to have its own Y-axis scale
+  facet_wrap(~Index, scales = "free_y") + 
   theme_bw() +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "none" # Hide legend since X-axis labels explain the colours
+    legend.position = "none" 
   ) +
   labs(
     title = "Intra-class Variance: Combined Land Cover Categories",
     x = "Land Cover Type",
     y = "Index Value"
   )
-
 print(KiliNP_Boxplot_Combined)
 
-# Optional: To plot the 19 classes, simply replace `subset.KiliNP_Combined` with `subset.KiliNP_Indices_Comparison_DF`
-
 ### PERMANOVA ####
-## These datasets are too large to conduct a PERMANOVA upon (37121.9GB RAM required)
-## Instead, I will use a random representative subset of the data
-# Option 1: if there are no NA values in the dataframe
-
-subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[sample(nrow(KiliNP_Indices_Comparison_DF), 10000), ]
-
-# Option 2: if there are NA values in the dataframe (this one filters them out first)
 
 subset.KiliNP_Indices_Comparison_DF <- KiliNP_Indices_Comparison_DF[
   sample(which(!is.na(KiliNP_Indices_Comparison_DF$Veg_GroundTruth)), 10000), ]
 
-# Conduct a series of PERMANOVAs
-
-PERMANOVA_ShannonsH <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$ShannonsH ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999,
-  parallel = kili.cores # I've set it to parallelise using the kili.cores argument from before
+# --- MASKED PERMANOVAs ---
+PERMANOVA_ShannonsH_Masked <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$ShannonH_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
 )
-saveRDS(PERMANOVA_ShannonsH, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_ShannonsH.rds")) # Save it so I don't have to recalculate repeatedly
-
-PERMANOVA_RaosQ_Classic <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999,
-  parallel = kili.cores
+PERMANOVA_RaosQ_Classic_Masked <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
 )
-saveRDS(PERMANOVA_RaosQ_Classic, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Classic_RaosQ.rds")) # Save it so I don't have to recalculate repeatedly
-
-PERMANOVA_RaosQ_TWDTW <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
-  permutations = 999,
-  parallel = kili.cores
+PERMANOVA_RaosQ_TWDTW_Masked <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
 )
-saveRDS(PERMANOVA_RaosQ_TWDTW, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_TWDTW_RaosQ.rds")) # Save it so I don't have to recalculate repeatedly
+
+# --- SG FILTERED PERMANOVAs ---
+PERMANOVA_ShannonsH_SG <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$ShannonH_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
+)
+PERMANOVA_RaosQ_Classic_SG <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
+)
+PERMANOVA_RaosQ_TWDTW_SG <- adonis2(
+  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999, parallel = kili.cores
+)
 
 # Put the PERMANOVA results into a dataframe for effective presentation
 
 KiliNP_PERMANOVA_Results <- data.frame(
-  Index = c("Shannon H", "Classic Rao Q", "TWDTW Rao Q"),
+  Pipeline = c("Masked", "Masked", "Masked", "SG Filtered", "SG Filtered", "SG Filtered"),
+  Index = c("Shannon H", "Classic Rao Q", "TWDTW Rao Q", "Shannon H", "Classic Rao Q", "TWDTW Rao Q"),
   R2 = c(
-    PERMANOVA_ShannonsH$R2[1],
-    PERMANOVA_RaosQ_Classic$R2[1],
-    PERMANOVA_RaosQ_TWDTW$R2[1]
-  ),
+    PERMANOVA_ShannonsH_Masked$R2[1],
+    PERMANOVA_RaosQ_Classic_Masked$R2[1],
+    PERMANOVA_RaosQ_TWDTW_Masked$R2[1],
+    PERMANOVA_ShannonsH_SG$R2[1],
+    PERMANOVA_RaosQ_Classic_SG$R2[1],
+    PERMANOVA_RaosQ_TWDTW_SG$R2[1]),
   F = c(
-    PERMANOVA_ShannonsH$F[1],
-    PERMANOVA_RaosQ_Classic$F[1],
-    PERMANOVA_RaosQ_TWDTW$F[1]
-  ),
+    PERMANOVA_ShannonsH_Masked$F[1],
+    PERMANOVA_RaosQ_Classic_Masked$F[1],
+    PERMANOVA_RaosQ_TWDTW_Masked$F[1],
+    PERMANOVA_ShannonsH_SG$F[1],
+    PERMANOVA_RaosQ_Classic_SG$F[1],
+    PERMANOVA_RaosQ_TWDTW_SG$F[1]),
   p_value = c(
-    PERMANOVA_ShannonsH$`Pr(>F)`[1],
-    PERMANOVA_RaosQ_Classic$`Pr(>F)`[1],
-    PERMANOVA_RaosQ_TWDTW$`Pr(>F)`[1]
-  )
+    PERMANOVA_ShannonsH_Masked$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_Classic_Masked$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_TWDTW_Masked$`Pr(>F)`[1],
+    PERMANOVA_ShannonsH_SG$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_Classic_SG$`Pr(>F)`[1],
+    PERMANOVA_RaosQ_TWDTW_SG$`Pr(>F)`[1])
 )
 
 print(KiliNP_PERMANOVA_Results)
+message("Kilimanjaro PPI analyses complete!")
 
 saveRDS(KiliNP_PERMANOVA_Results, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # Save it so I don't have to recalculate repeatedly
 KiliNP_PERMANOVA_Results <- readRDS(file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # And load it back in if necessary
