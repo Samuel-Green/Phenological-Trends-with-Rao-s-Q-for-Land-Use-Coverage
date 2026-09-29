@@ -15,4 +15,4 @@ module load R/4.1.2
 
 cd "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Scripts"
 
-Rscript 03.1C_Kilimanjaro_Classical-RaoQ_MaRC3a.R
+Rscript 03.1A_Kilimanjaro_Classical-RaoQ_MaRC3a.R

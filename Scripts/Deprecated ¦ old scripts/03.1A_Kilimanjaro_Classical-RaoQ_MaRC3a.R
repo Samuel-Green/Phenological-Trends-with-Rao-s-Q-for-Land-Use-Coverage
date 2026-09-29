@@ -1,5 +1,5 @@
 ###############################################################################
-# 03.1A_Kilimanjaro_Classical-RaoQ_MaRC3a
+# 03.1C_Kilimanjaro_Classical-RaoQ_MaRC3a
 # Processes ONE tile for classical Rao's Q
 ###############################################################################
 
@@ -16,8 +16,8 @@ flush.console()                                # *** ADDED ***
 
 # directories
 
-tile_dir <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Mean NDVI tiles"
-out_dir  <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Mean NDVI tiles/rao-utputs"
+tile_dir <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Tiny tiles"
+out_dir  <- "/home/shayle/TWDTW Paper (B3 Hackathon Postprint)/Data/Processed Data/Kilimanjaro/Tiny tiles/rao-utputs"
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
