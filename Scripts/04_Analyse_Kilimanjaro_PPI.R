@@ -23,18 +23,23 @@ library(terra)
 KiliNP_Results <- file.path(Results, "Kilimanjaro")
 dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 
-kili.cores <- max(1, detectCores() - 2)
+kili.cores <- max(1, detectCores() - 4)
 
 # Explicitly set the input directory to the external drive to manage storage
 
-KiliNP_PPI_Input <- "D:/Elliot Shayle/Kilimanjaro Geodata/Surface Reflectance Rasters" # Temporary location because my computer is low on storage
+KiliNP_PPI_Input <- "D:/Elliot Shayle/Kilimanjaro Geodata/Surface Reflectance Rasters" # Temporary local location because my computer is low on storage
+KiliNP_PPI_Input <- "~/Kilimanjaro Geodata/Surface Reflectance Rasters" # Location of data on MaRC3a
 KiliNP_PPI_Processed <- "D:/Elliot Shayle/Kilimanjaro Geodata/Processed" # Temporary location because my computer is low on storage
+KiliNP_PPI_Processed <- "~/Kilimanjaro Geodata/Processed" # Location of data on MaRC3a
 
 # Load KiliNP_LandCover_Vector boundary (this is our land cover ground truth data)
 
 KiliNP_LandCover_Vector <- 
   vect(file.path(KiliNP_Input,
-                 "/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp")) # Load in the ground truth data
+                 "/Kili Ground Truthing Land Cover Classifications/VegAug1_KILI_SES_withnewcof.shp")) # Load in the ground truth data (local PC)
+
+KiliNP_LandCover_Vector <- vect(
+  "~/TWDTW_Paper/Data/Input_Data/Kilimanjaro/Kili_Ground_Truthing_Land_Cover_Classifications/VegAug1_KILI_SES_withnewcof.shp") # (MaRC3a)
 
 ## List raster files
 # The pattern now looks for the Sentinel-2 BOA files specifically
@@ -95,7 +100,7 @@ KiliNP_B02_Files <- list.files(
   pattern = "^KiliNP_\\d{4}_B02_Cropped\\.tif$",
   full.names = TRUE
 )
-KiliNP_c_Timeseries <- rast(KiliNP_B02_Files)
+KiliNP_Blue_Timeseries <- rast(KiliNP_B02_Files)
 
 # 2. Green Band (B03)
 
@@ -241,7 +246,8 @@ calc_ppi <- function(dvi_vals, sza_vector) {
 
 # Apply the function across the z-dimension
 
-KiliNP_PPI_Timeseries <- app(KiliNP_DVI, fun = calc_ppi, sza_vector = sza_rad_vector)
+KiliNP_PPI_Timeseries <- app(KiliNP_DVI, fun = calc_ppi, sza_vector = sza_rad_vector,
+                             cores = kili.cores/kili.cores) # I set it to 1 core because it keeps crashing due to RAM constraints
 
 # Carry over the layer names for consistency
 
@@ -251,26 +257,29 @@ names(KiliNP_PPI_Timeseries) <- names(KiliNP_DVI)
 
 writeRaster(
   KiliNP_PPI_Timeseries, 
-  filename = file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries.tif"), 
+  filename = file.path(KiliNP_Processed, "KiliNP_PPI_2017-2021_Timeseries.tif"), 
   overwrite = TRUE
 )
 
 # Load the PPI raster back in!
 
-KiliNP_PPI_Timeseries <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries.tif"))
+KiliNP_PPI_Timeseries <- rast(file.path(KiliNP_Processed, "KiliNP_PPI_2017-2021_Timeseries.tif"))
 
 ### Parallel Track: Masked (Non-Gap-Filled) Pipeline ####
+## Mask pixels in the raster stack which don't have a complete timeseries of data
 
-### Mask pixels in the raster stack which don't have a complete timeseries of data
 message("Creating parallel non-gap-filled (Masked) pipeline...")
 
 # Create logical mask: TRUE only where ALL layers are non-NA
+
 Kili.pixel.mask <- app(KiliNP_PPI_Timeseries, function(x) all(!is.na(x)))
 
 # Mask out incomplete pixels (FALSE becomes NA)
+
 KiliNP_PPI_Timeseries_Masked <- mask(KiliNP_PPI_Timeseries, Kili.pixel.mask, maskvalues = 0)
 
 # Export and load raster so I don't have to calculate it every time
+
 writeRaster(KiliNP_PPI_Timeseries_Masked, file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries_Masked.tif"), overwrite = TRUE)
 KiliNP_PPI_Timeseries_Masked <- rast(file.path(KiliNP_PPI_Processed, "KiliNP_PPI_2017-2021_Timeseries_Masked.tif"))
 
