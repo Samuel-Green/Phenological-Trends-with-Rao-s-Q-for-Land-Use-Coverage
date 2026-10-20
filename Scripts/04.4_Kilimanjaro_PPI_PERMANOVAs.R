@@ -5,13 +5,20 @@
 
 library(vegan)
 library(parallel)
+library(here)
 
 message("Initialising Kilimanjaro PPI PERMANOVA environment...")
 
-# Define Linux-safe paths for the MaRC3a server
+# Define Linux-safe paths for the Keller Computer
 
-KiliNP_Processed <- "~/TWDTW_Paper/Data/Processed_Data/Kilimanjaro"
-KiliNP_Results <- "~/TWDTW_Paper/Results/Kilimanjaro"
+InputData <- here::here("Data/Input Data")
+ProcessedData <- here::here("Data/Processed Data")
+Results <- here::here("Results 📈📉")
+
+KiliNP_Input <- file.path(InputData, "Kilimanjaro")
+KiliNP_Processed <- file.path(ProcessedData, "Kilimanjaro")
+KiliNP_Results <- file.path(Results, "Kilimanjaro")
+
 dir.create(KiliNP_Results, showWarnings = FALSE, recursive = TRUE)
 
 # Dynamically detect available cores assigned by SLURM
@@ -27,7 +34,7 @@ subset.KiliNP_PPI_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "
 message(paste0(Sys.time(), ": Starting Masked raster PERMANOVAs..."))
 
 PERMANOVA_PPI_ShannonsH_Masked <- adonis2(
-  subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth
+  subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 

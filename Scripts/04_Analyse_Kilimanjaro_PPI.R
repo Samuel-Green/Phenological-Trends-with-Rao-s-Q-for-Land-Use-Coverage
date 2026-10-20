@@ -838,7 +838,7 @@ subset.KiliNP_PPI_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "
 ## Masked PERMANOVAs
 
 PERMANOVA_PPI_ShannonsH_Masked <- adonis2(
-  subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth
+  subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
