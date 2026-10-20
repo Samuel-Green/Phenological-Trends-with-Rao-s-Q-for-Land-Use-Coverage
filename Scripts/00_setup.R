@@ -25,6 +25,7 @@ install.packages("ncdf4")
 install.packages("zoo")
 install.packages("pracma")
 install.packages("raster")
+install.packages("ggplot2")
 
 ## Load libraries
 
@@ -45,6 +46,7 @@ library(ncdf4)
 library(zoo)
 library(pracma)
 library(raster)
+library(ggplot2)
 
 ### Reproducibility settings ####
 

@@ -540,7 +540,7 @@ kili.rao.files.sg <- list.files( # Gather up all the files
 )
 KiliNP_Classic_RaoQ_SG <- terra::mosaic(sprc(lapply(kili.rao.files.sg, rast)))
 writeRaster(KiliNP_Classic_RaoQ_SG, file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_SG.tif"), overwrite = TRUE)
-KiliNP_Classic_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_SG.tif"))
+KiliNP_Classic_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_SG.tif")) # Load it back in!
 plot(KiliNP_Classic_RaoQ_SG)
 
 # For the masked raster
@@ -554,7 +554,7 @@ kili.rao.files.masked <- list.files( # Gather up all the files
 KiliNP_Classic_RaoQ_Masked <- terra::mosaic(sprc(lapply(kili.rao.files.masked, rast))) # Load in and demosaic the computed tiles
 KiliNP_Classic_RaoQ_Masked <- terra::extend(KiliNP_Classic_RaoQ_Masked, KiliNP_Classic_RaoQ_SG) # Extend the masked raster, filling the uncomputed boundary tiles with NAs
 writeRaster(KiliNP_Classic_RaoQ_Masked, file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_Masked.tif"), overwrite = TRUE) # Save it for later
-KiliNP_Classic_RaoQ_Masked <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_Masked.tif")) # Load it back in
+KiliNP_Classic_RaoQ_Masked <- rast(file.path(KiliNP_Results, "Kilimanjaro_Classic-RaoQ_Masked.tif")) # Load it back in!
 plot(KiliNP_Classic_RaoQ_Masked)
 
 ### 3. Rao's Q with TWDTW ####
@@ -680,7 +680,7 @@ kili.twdtw.rao.files.sg <- list.files(
 )
 KiliNP_TWDTW_RaoQ_SG <- terra::mosaic(sprc(lapply(kili.twdtw.rao.files.sg, rast)))
 writeRaster(KiliNP_TWDTW_RaoQ_SG, file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ_SG.tif"), overwrite = TRUE) # Save it for later
-KiliNP_TWDTW_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ_SG.tif")) # Load it back in
+KiliNP_TWDTW_RaoQ_SG <- rast(file.path(KiliNP_Results, "Kilimanjaro_TWDTW-RaoQ_SG.tif")) # Load it back in!
 plot(KiliNP_TWDTW_RaoQ_SG)
 
 # For the masked raster
@@ -699,7 +699,7 @@ plot(KiliNP_TWDTW_RaoQ_Masked)
 ### Export all rasters for comparison ####
 
 KiliNP_Comparison_Rasters <- c(
-  KiliNP_Mean_Masked, # Trimmed so that it matches the extent of the other rasters
+  KiliNP_Mean_Masked, # No longer trimmed so that it keeps to the same the extent of the other rasters
   KiliNP_ShannonH_Masked,
   KiliNP_Classic_RaoQ_Masked,
   KiliNP_TWDTW_RaoQ_Masked,
@@ -710,14 +710,14 @@ KiliNP_Comparison_Rasters <- c(
 )
 
 names(KiliNP_Comparison_Rasters) <- c(
-  "Sentinel-2_MeanNDVI_Masked",
-  "ShannonH_Masked",
-  "RaosQ_Classic_Masked",
-  "RaosQ_TWDTW_Masked",
-  "Sentinel-2_MeanNDVI_SG_Gap-Filled",
-  "ShannonH_SG",
-  "RaosQ_Classic_SG",
-  "RaosQ_TWDTW_SG"
+  "Sentinel-2 MeanNDVI Masked",
+  "ShannonH Masked (NDVI)",
+  "RaosQ Classic Masked (NDVI)",
+  "RaosQ TWDTW Masked (NDVI)",
+  "Sentinel-2 MeanNDVI SG Gap-Filled",
+  "ShannonH SG (NDVI)",
+  "RaosQ Classic SG (NDVI)",
+  "RaosQ TWDTW SG (NDVI)"
 )
 
 writeRaster( # So I don't have to compute it every time
@@ -861,34 +861,34 @@ subset.KiliNP_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "Kili
 # For the masked raster
 
 PERMANOVA_ShannonsH_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$ShannonH_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`ShannonH Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_Classic_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_TWDTW_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 # For the gap-filled raster
 
 PERMANOVA_ShannonsH_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$ShannonH_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`ShannonH SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_Classic_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_TWDTW_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 

@@ -27,34 +27,34 @@ subset.KiliNP_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "Kili
 message(paste0(Sys.time(), ": Starting Masked raster PERMANOVAs..."))
 
 PERMANOVA_ShannonsH_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$ShannonH_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`ShannonH Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_Classic_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_TWDTW_Masked <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_Masked ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 message(paste0(Sys.time(), ": Starting SG-Filtered raster PERMANOVAs..."))
 
 PERMANOVA_ShannonsH_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$ShannonH_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`ShannonH SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_Classic_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_Classic_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
 PERMANOVA_RaosQ_TWDTW_SG <- adonis2(
-  subset.KiliNP_Indices_Comparison_DF$RaosQ_TWDTW_SG ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
+  subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
 
