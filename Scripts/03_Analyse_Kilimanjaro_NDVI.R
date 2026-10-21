@@ -857,40 +857,77 @@ subset.KiliNP_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "Kili
 # The following PERMANOVAs can be run below on a powerful machine, 
 # or by script 03.4_Kilimanjaro_NDVI_PERMANOVAs, which uses the exact same code but can be run externally on a server.
 
-## Conduct a series of PERMANOVAs
-# For the masked raster
+### Conduct a series of PERMANOVAs
+## For the masked raster
 
+# Masked Shannon's H (NDVI)
+
+message(paste0(Sys.time(), ": [1/6] Running PERMANOVA_ShannonsH_Masked..."))
 PERMANOVA_ShannonsH_Masked <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`ShannonH Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_ShannonsH_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_ShannonsH_Masked.rds"))
+message(paste0(Sys.time(), ": [1/6] Completed and saved PERMANOVA_NDVI_ShannonsH_Masked.rds"))
+gc()
 
+# Masked Classic Rao's Q (NDVI)
+
+message(paste0(Sys.time(), ": [2/6] Running PERMANOVA_RaosQ_Classic_Masked..."))
 PERMANOVA_RaosQ_Classic_Masked <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_Classic_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_RaosQ_Classic_Masked.rds"))
+message(paste0(Sys.time(), ": [2/6] Completed and saved PERMANOVA_NDVI_RaosQ_Classic_Masked.rds"))
+gc()
 
+# Masked TWDTW Rao's Q (NDVI)
+
+message(paste0(Sys.time(), ": [3/6] Running PERMANOVA_RaosQ_TWDTW_Masked..."))
 PERMANOVA_RaosQ_TWDTW_Masked <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW Masked (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_TWDTW_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_RaosQ_TWDTW_Masked.rds"))
+message(paste0(Sys.time(), ": [3/6] Completed and saved PERMANOVA_NDVI_RaosQ_TWDTW_Masked.rds"))
+gc()
 
-# For the gap-filled raster
+message(paste0(Sys.time(), ": Starting SG-Filtered NDVI raster PERMANOVAs..."))
 
+## For the Savitzky-Golay (gap-filled) raster
+# SG-Filtered Shannon's H (NDVI)
+
+message(paste0(Sys.time(), ": [4/6] Running PERMANOVA_ShannonsH_SG..."))
 PERMANOVA_ShannonsH_SG <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`ShannonH SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_ShannonsH_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_ShannonsH_SG.rds"))
+message(paste0(Sys.time(), ": [4/6] Completed and saved PERMANOVA_NDVI_ShannonsH_SG.rds"))
+gc()
 
+# SG-Filtered Classic Rao's Q (NDVI)
+
+message(paste0(Sys.time(), ": [5/6] Running PERMANOVA_RaosQ_Classic_SG..."))
 PERMANOVA_RaosQ_Classic_SG <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`RaosQ Classic SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_Classic_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_RaosQ_Classic_SG.rds"))
+message(paste0(Sys.time(), ": [5/6] Completed and saved PERMANOVA_NDVI_RaosQ_Classic_SG.rds"))
+gc()
 
+# SG-Filtered TWDTW Rao's Q (NDVI)
+
+message(paste0(Sys.time(), ": [6/6] Running PERMANOVA_RaosQ_TWDTW_SG..."))
 PERMANOVA_RaosQ_TWDTW_SG <- adonis2(
   subset.KiliNP_Indices_Comparison_DF$`RaosQ TWDTW SG (NDVI)` ~ subset.KiliNP_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_RaosQ_TWDTW_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_NDVI_RaosQ_TWDTW_SG.rds"))
+message(paste0(Sys.time(), ": [6/6] Completed and saved PERMANOVA_NDVI_RaosQ_TWDTW_SG.rds"))
+gc()
 
 # Put the PERMANOVA results into a dataframe for effective presentation
 
