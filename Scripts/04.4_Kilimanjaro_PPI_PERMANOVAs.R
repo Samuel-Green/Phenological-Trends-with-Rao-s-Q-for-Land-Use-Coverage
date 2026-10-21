@@ -31,39 +31,73 @@ message("Allocated ", kili.cores, " cores for permutation processing.")
 message("Loading stratified dataset...")
 subset.KiliNP_PPI_Indices_Comparison_DF <- readRDS(file.path(KiliNP_Processed, "Kili_PPI_Comparison_DF_Filtered.rds"))
 
-message(paste0(Sys.time(), ": Starting Masked raster PERMANOVAs..."))
+# Create the PERMANOVAs subfolder inside the Kilimanjaro results directory
+KiliNP_PERMANOVA_Dir <- file.path(KiliNP_Results, "PERMANOVAs")
+dir.create(KiliNP_PERMANOVA_Dir, showWarnings = FALSE, recursive = TRUE)
 
+message(paste0(Sys.time(), ": Starting Masked PPI raster PERMANOVAs..."))
+
+# --- 1. Masked Shannon's H (PPI) ---
+message(paste0(Sys.time(), ": [1/6] Running PERMANOVA_PPI_ShannonsH_Masked..."))
 PERMANOVA_PPI_ShannonsH_Masked <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_ShannonsH_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_ShannonsH_Masked.rds"))
+message(paste0(Sys.time(), ": [1/6] Completed and saved PERMANOVA_PPI_ShannonsH_Masked.rds"))
+gc()
 
+# --- 2. Masked Classic Rao's Q (PPI) ---
+message(paste0(Sys.time(), ": [2/6] Running PERMANOVA_PPI_RaosQ_Classic_Masked..."))
 PERMANOVA_PPI_RaosQ_Classic_Masked <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`RaosQ Classic Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_RaosQ_Classic_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_RaosQ_Classic_Masked.rds"))
+message(paste0(Sys.time(), ": [2/6] Completed and saved PERMANOVA_PPI_RaosQ_Classic_Masked.rds"))
+gc()
 
+# --- 3. Masked TWDTW Rao's Q (PPI) ---
+message(paste0(Sys.time(), ": [3/6] Running PERMANOVA_PPI_RaosQ_TWDTW_Masked..."))
 PERMANOVA_PPI_RaosQ_TWDTW_Masked <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`RaosQ TWDTW Masked (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_RaosQ_TWDTW_Masked, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_RaosQ_TWDTW_Masked.rds"))
+message(paste0(Sys.time(), ": [3/6] Completed and saved PERMANOVA_PPI_RaosQ_TWDTW_Masked.rds"))
+gc()
 
-message(paste0(Sys.time(), ": Starting SG-Filtered raster PERMANOVAs..."))
+message(paste0(Sys.time(), ": Starting SG-Filtered PPI raster PERMANOVAs..."))
 
+# --- 4. SG-Filtered Shannon's H (PPI) ---
+message(paste0(Sys.time(), ": [4/6] Running PERMANOVA_PPI_ShannonsH_SG..."))
 PERMANOVA_PPI_ShannonsH_SG <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`ShannonH SG (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_ShannonsH_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_ShannonsH_SG.rds"))
+message(paste0(Sys.time(), ": [4/6] Completed and saved PERMANOVA_PPI_ShannonsH_SG.rds"))
+gc()
 
+# --- 5. SG-Filtered Classic Rao's Q (PPI) ---
+message(paste0(Sys.time(), ": [5/6] Running PERMANOVA_PPI_RaosQ_Classic_SG..."))
 PERMANOVA_PPI_RaosQ_Classic_SG <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`RaosQ Classic SG (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_RaosQ_Classic_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_RaosQ_Classic_SG.rds"))
+message(paste0(Sys.time(), ": [5/6] Completed and saved PERMANOVA_PPI_RaosQ_Classic_SG.rds"))
+gc()
 
+# --- 6. SG-Filtered TWDTW Rao's Q (PPI) ---
+message(paste0(Sys.time(), ": [6/6] Running PERMANOVA_PPI_RaosQ_TWDTW_SG..."))
 PERMANOVA_PPI_RaosQ_TWDTW_SG <- adonis2(
   subset.KiliNP_PPI_Indices_Comparison_DF$`RaosQ TWDTW SG (PPI)` ~ subset.KiliNP_PPI_Indices_Comparison_DF$Veg_GroundTruth,
   permutations = 999, parallel = kili.cores
 )
+saveRDS(PERMANOVA_PPI_RaosQ_TWDTW_SG, file.path(KiliNP_PERMANOVA_Dir, "PERMANOVA_PPI_RaosQ_TWDTW_SG.rds"))
+message(paste0(Sys.time(), ": [6/6] Completed and saved PERMANOVA_PPI_RaosQ_TWDTW_SG.rds"))
+gc()
 
 message(paste0(Sys.time(), ": Compiling results..."))
 

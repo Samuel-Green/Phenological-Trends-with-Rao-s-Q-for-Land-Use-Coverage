@@ -900,7 +900,8 @@ KiliNP_PPI_PERMANOVA_Results <- data.frame(
 print(KiliNP_PPI_PERMANOVA_Results)
 message("Kilimanjaro PPI analyses complete!")
 
-saveRDS(KiliNP_PPI_PERMANOVA_Results, file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # Save it so I don't have to recalculate repeatedly
-KiliNP_PPI_PERMANOVA_Results <- readRDS(file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Results.rds")) # And load it back in if necessary
+write.csv(KiliNP_PPI_PERMANOVA_Results, file = file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Summary.csv"), row.names = FALSE) # Save it so I don't have to recalculate repeatedly
+message("Results successfully saved to: ", file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Summary.csv"))
+KiliNP_PPI_PERMANOVA_Results <- read.csv(file.path(KiliNP_Results, "KiliNP_PPI_PERMANOVA_Summary.csv")) # And load it back in if necessary
 
 message("Kilimanjaro analysis complete.")
