@@ -1,5 +1,5 @@
 ############################################################################ ###
-# Elliot Samuel Shayle - University of Marburg - 24/11/2025                    #
+# Elliot Samuel Shayle - University of Marburg - 23/10/2026                    #
 # 05_Analyse_Knepp_Estate_Sentinel_NDVI.R                                      #
 # Comparative NDVI analysis of TWDTW Rao's Q & classic Rao's Q in Knepp Estate #
 ############################################################################ ###
@@ -12,872 +12,551 @@ library(rasterdiv)
 library(twdtw)
 library(vegan)
 library(pROC)
-library(ppi)
+library(terra)
+library(parallel)
 
 # Core spatial stack already loaded in 00_setup.R:
 # terra, sf, here, dplyr, stringr
 
-### Define the  file paths and import the site data ####
+### Define the file paths and import the site data ####
 ## Output directory for this script
 
 Knepp_Results <- file.path(Results, "Knepp Estate")
 dir.create(Knepp_Results, showWarnings = FALSE, recursive = TRUE)
 
-# Explicitly set the input directory to the external drive to manage storage
+# Define CPU cores for parallel operations (consistent with kili.cores in 03_Analyse_Kilimanjaro_NDVI.R)
 
-Knepp_Input_Ext <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Input Data" # External location because my computer is low on storage
-Knepp_Processed_Ext <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Processed Data" # External location because my computer is low on storage
+knepp.cores <- max(1, detectCores() - 2)
 
-message("Importing Sentinel-2 NDVI annual rasters...")
+# Explicitly set the input/processed directories on the external drive to manage storage
 
-# Get file paths specifically for the NDVI GeoTIFFs
+Knepp_Input_Ext     <- "K:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Input Data"
+Knepp_Processed_Ext <- "K:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Processed Data"
+dir.create(Knepp_Processed_Ext, showWarnings = FALSE, recursive = TRUE)
 
-Knepp.input.files <- list.files(
-  Knepp_Input_Ext, 
-  pattern = ".*_HL_TSA_SEN2L_NDVI_FBM\\.tif$", 
+# Load Knepp Estate boundaries (core estate and 5 km buffered boundary)
+
+KneppEstate_Boundaries          <- vect(file.path(Knepp_Input, "Schulte-to-Bühne_Knepp_Site_Data", "knepp_boundary_lcc_pretty.shp"))
+KneppEstate_Buffered_Boundaries <- vect(file.path(Knepp_Processed, "Knepp_Estate_Buffered_Boundary.shp"))
+
+### Step 1A: Crop, mask, clean NoData, and scale raw annual Sentinel-2 NDVI rasters ####
+## Only run this loop if you haven't already generated the cropped annual NDVI files
+
+message("Beginning cropping, masking, and scaling of raw Sentinel-2 NDVI rasters...")
+
+tmp.files <- list.files(
+  Knepp_Input_Ext,
+  pattern = ".*_HL_TSA_SEN2L_NDVI_FBM\\.tif$",
   full.names = TRUE
 )
 
-# Import and stack all of the Sentinel-2 GeoTIFFs into one object
-# Because each file has 12 layers, this will automatically create a 48-layer stack (4 years * 12 months)
+for (f in tmp.files) {
+  
+  tmp.Knepp.raster <- rast(f)
+  
+  # Ensure the buffered boundary shapefile shares the exact CRS of the raw raster
+  
+  if (crs(tmp.Knepp.raster) != crs(KneppEstate_Buffered_Boundaries)) {
+    KneppEstate_Buffered_Boundaries <- project(KneppEstate_Buffered_Boundaries, crs(tmp.Knepp.raster))
+  }
+  
+  # Attempt to crop and mask to the 5 km buffered boundary.
+  # If the extents do not overlap (e.g., the corrupted 2018 file), tryCatch safely skips it.
+  
+  tmp.Knepp.raster.masked <- tryCatch({
+    crop(tmp.Knepp.raster, KneppEstate_Buffered_Boundaries, mask = TRUE)
+  }, error = function(e) {
+    message(paste("  -> Skipping non-overlapping raster:", basename(f)))
+    return(NULL)
+  })
+  
+  # If tryCatch returned NULL, clean up and move to the next file
+  
+  if (is.null(tmp.Knepp.raster.masked)) {
+    rm(tmp.Knepp.raster)
+    next
+  }
+  
+  # CRITICAL: Remove Sentinel-2 integer NoData flags (-9999 / -10000) and scale to [-1, 1] floats.
+  # Doing this now ensures SG smoothing, Shannon's H, and paRao all receive true float NDVI values.
+  
+  tmp.Knepp.raster.masked[tmp.Knepp.raster.masked <= -9000] <- NA_real_
+  tmp.Knepp.raster.masked <- tmp.Knepp.raster.masked / 10000
+  
+  # Extract the 4-digit year from the start of the filename
+  
+  tmp.year <- sub("^(\\d{4}).*", "\\1", basename(f))
+  
+  # Assign clean monthly layer names for this year (e.g., "2019-01_NDVI" ... "2019-12_NDVI")
+  
+  names(tmp.Knepp.raster.masked) <- paste0(tmp.year, "-", sprintf("%02d", 1:12), "_NDVI")
+  
+  # Save the cropped, scaled 12-month raster to the processed folder
+  
+  tmp.new.name <- paste0("Knepp_", tmp.year, "_NDVI_Cropped.tif")
+  
+  writeRaster(
+    tmp.Knepp.raster.masked,
+    filename = file.path(Knepp_Processed_Ext, tmp.new.name),
+    overwrite = TRUE
+  )
+  message(paste0("Finished writing scaled raster: ", tmp.new.name))
+  
+  # Free RAM before next year [pun intended]
+  
+  rm(tmp.Knepp.raster, tmp.Knepp.raster.masked)
+  gc()
+}
 
-Knepp_Buffered_Timeseries.NDVI <- rast(Knepp.input.files[-2]) # Removes the year 2018 because that raster is broken
+### Step 1B: Import the cropped annual rasters into a single multi-year stack ####
 
-# Extract the year from the filename (grabs the first 4 digits of the filename)
+message("Importing cropped annual NDVI rasters into a continuous multi-year stack...")
 
-Knepp.years.files <- sub("^(\\d{4}).*", "\\1", basename(Knepp.input.files))
+Knepp_Cropped_NDVI_Files <- list.files(
+  Knepp_Processed_Ext,
+  pattern = "^Knepp_\\d{4}_NDVI_Cropped\\.tif$",
+  full.names = TRUE
+)
 
-# Generate clean layer names for all 12 months for each year (e.g., "2017-01_NDVI")
+# Load and stack all valid annual files chronologically
 
-Knepp.layer.names <- unlist(lapply(Knepp.years.files[-2], function(y) { # Removes 2018
+Knepp_Buffered_Timeseries.NDVI <- rast(Knepp_Cropped_NDVI_Files)
+
+# Extract the years from the filenames and assign standardized layer names ("YYYY-MM_NDVI")
+
+Knepp.years.loaded <- sub("^Knepp_(\\d{4})_NDVI_Cropped\\.tif$", "\\1", basename(Knepp_Cropped_NDVI_Files))
+message("Years found on disk: ", paste(Knepp.years.loaded, collapse = ", "))
+
+Knepp.layer.names <- unlist(lapply(Knepp.years.loaded, function(y) {
   paste0(y, "-", sprintf("%02d", 1:12), "_NDVI")
 }))
-
-# Assign the generated names to each layer of the raster stack
-
 names(Knepp_Buffered_Timeseries.NDVI) <- Knepp.layer.names
 
-message("Data successfully imported and renamed.")
+## Exclude edge years with incomplete seasonal data (as done in 06_Analyse_Knepp_Estate_Sentinel_PPI.R)
+# Note: Since the 2017 year is disconnected from the rest of the timeseries, I will exclude it
+
+years_to_exclude <- c("2017")
+exclude_regex    <- paste(years_to_exclude, collapse = "|")
+
+if (any(grepl(exclude_regex, names(Knepp_Buffered_Timeseries.NDVI)))) {
+  message("Excluding incomplete edge years (", paste(years_to_exclude, collapse = ", "), ") from continuous stack...")
+  Knepp_Buffered_Timeseries.NDVI <- Knepp_Buffered_Timeseries.NDVI[[grep(exclude_regex, names(Knepp_Buffered_Timeseries.NDVI), invert = TRUE)]]
+}
 
 ### Inspect temporal structure ####
-## rasterdiv::paRao() requires an explicit time_vector
-## This must correspond EXACTLY to the layer order of your 36-layer stack
+## rasterdiv::paRao() requires an explicit time_vector matching the exact layer order
 
-message("Constructing time vector for subsetted Knepp time series...")
+message("Constructing time vector for continuous Knepp NDVI time series...")
 
-# 1. Grab the names of the layers currently in your stack (e.g., "2017-01_NDVI")
+# 1. Grab the remaining layer names (e.g., "2019-01_NDVI")
 
 current.knepp.names <- names(Knepp_Buffered_Timeseries.NDVI)
 
-# 2. Strip the "_NDVI" suffix and append "-15" to represent the middle of the month
+# 2. Strip "_NDVI" and append "-15" to represent mid-month dates
 
 knepp.dates.string <- paste0(sub("_NDVI$", "", current.knepp.names), "-15")
 
-# 3. Convert the clean strings into actual Date objects
+# 3. Convert to Date objects
 
 Knepp.full.dates <- as.Date(knepp.dates.string, format = "%Y-%m-%d")
 
-# 4. Verify the structure
+# 4. Safety checks: verify no NAs and confirm exact match with number of raster layers
 
-str(Knepp.full.dates) 
-
-# 5. Add a safety check! This will halt the script if the lengths don't match
-
+if (any(is.na(Knepp.full.dates))) stop("Date parsing failed! Check layer names.")
 stopifnot(length(Knepp.full.dates) == nlyr(Knepp_Buffered_Timeseries.NDVI))
 
-message(paste("Temporal length:", length(Knepp.full.dates), "layers aligned perfectly."))
+# 5. Check whether the multi-year monthly sequence is strictly contiguous
 
-## Subset and crop the raster
-# Import the shapefile with the Knepp Estate's borders
+expected_dates <- seq(min(Knepp.full.dates), max(Knepp.full.dates), by = "month")
+if (length(expected_dates) != length(Knepp.full.dates)) {
+  warning("Watch out: There is a missing year/month gap in your sequence! Missing dates: ",
+          paste(expected_dates[!expected_dates %in% Knepp.full.dates], collapse = ", "))
+} else {
+  message("Temporal sequence is 100% contiguous from ", min(Knepp.full.dates), " to ", max(Knepp.full.dates),
+          " (", length(Knepp.full.dates), " monthly layers).")
+}
 
-KneppEstate_Boundaries <- vect(file.path(Knepp_Input,"Schulte-to-Bühne_Knepp_Site_Data","knepp_boundary_lcc_pretty.shp"))
-KneppEstate_Buffered_Boundaries <- vect(file.path(Knepp_Processed,"Knepp_Estate_Buffered_Boundary.shp"))
-
-# Check that the CRS matches the timeseries raster
-
-if (crs(Knepp_Buffered_Timeseries.NDVI) != crs(KneppEstate_Buffered_Boundaries)){
-  Knepp_Buffered_Timeseries.NDVI <- project(Knepp_Buffered_Timeseries.NDVI, crs(KneppEstate_Buffered_Boundaries))
-  message("The raster was reprojected to match the shape file's CRS")
-} else {message("The raster's CRS already matches the shapefile's CRS")}
-
-# Crop the raster to just the study site
-
-message("Cropping and masking NDVI timeseries to the buffered Knepp boundaries...")
-
-# Step 1: Crop to the bounding box of the shapefile
-
-Knepp_Buffered_Timeseries.NDVI <- crop(
-  Knepp_Buffered_Timeseries.NDVI, 
-  KneppEstate_Buffered_Boundaries
-)
-
-# Step 2: Mask out the pixels outside the actual polygon shape
-
-Knepp_Buffered_Timeseries.NDVI <- mask(
-  Knepp_Buffered_Timeseries.NDVI, 
-  KneppEstate_Buffered_Boundaries
-)
-
-message("Cropping and masking complete.")
-
-# Export the raster for safe keeping
+# Export the unsmoothed continuous stack for safekeeping
 
 writeRaster(
-  Knepp_Buffered_Timeseries.NDVI, 
-  filename = file.path(Knepp_Processed, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"), 
+  Knepp_Buffered_Timeseries.NDVI,
+  filename = file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Continuous_Raw_Timeseries.tif"),
   overwrite = TRUE
 )
 
-# Load the NDVI raster back in!
+Knepp_Buffered_Timeseries.NDVI <- rast(
+  file.path(Knepp_Processed,"Knepp_Buffered_NDVI_Continuous_Raw_Timeseries.tif")) # And load it back in as necessary!
 
-Knepp_Buffered_Timeseries.NDVI <- rast(file.path(Knepp_Processed, "Knepp-Buffered_NDVI_2017_2019_2020_Timeseries.tif"))
-
-### OPTION 1: Export the dataset as a NetCDF file for Gaussian Processing ####
-## Saverio Vicario has a Python script for the Gaussian processing
-## Export the data in the NetCDF format for use in the Python script
-# Define the export path for the raw NetCDF
-
-Knepp_NCDF_Raw_NDVI_Path <- file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Raw.nc")
-
-# Set the CRS to be exported as part of the NetCDF
-
-NetCDF.CRS <- crs(Knepp_Buffered_Timeseries.NDVI)
-
-# Export the terra SpatRaster as a NetCDF file
-
-message("Exporting raw NDVI timeseries to NetCDF for Gaussian Process gap filling...")
-terra::writeCDF(
-  Knepp_Buffered_Timeseries.NDVI, 
-  filename = Knepp_NCDF_Raw_NDVI_Path, 
-  overwrite = TRUE, 
-  varname = "NDVI", 
-  longname = "Normalized Difference Vegetation Index",
-  gridmap = NetCDF.CRS,
-  unit = "unitless"
-)
-
-### OPTION 2: Gap-filling and smoothing the dataset with Savitzky-Golay filter ####
-## Define a function to conduct gap filling
-## This function will be applied to the temporal vector of every single pixel
+### Savitzky-Golay Gap-Filling and Smoothing ####
+## Define the pixel-wise gap-filling function (identical to Kilimanjaro case study)
 
 sg_gapfill <- function(x) {
   
-  # Check if the pixel is blank across all layers. If TRUE, return NAs to save time.
+  # If a pixel is NA across all layers (outside the 5 km boundary), return NAs immediately
   
   if (all(is.na(x))) {
-    return(rep(NA, length(x)))
+    return(rep(NA_real_, length(x)))
   }
   
-  ## Linear Interpolation
-  # zoo::na.approx draws a straight line between the data points before and after gap 
-  # 'rule = 2' is for if the 1st or last raster layers are NA, they are filled using the nearest valid observation
+  # 1. Linear interpolation across cloud gaps (rule = 2 pads leading/trailing NAs with nearest valid value)
   
-  x_interp <- zoo::na.approx(x, na.rm = FALSE, rule = 2) # No NA values prevents crashes
+  x_interp <- zoo::na.approx(x, na.rm = FALSE, rule = 2)
   
-  ## Savitzky-Golay Smoothing
+  # 2. Savitzky-Golay smoothing (fl = 5 preserves seasonal amplitude; forder = 2 is standard quadratic)
   
-  x_smoothed <- pracma::savgol(x_interp, 
-                               fl = 5, # fl = Filter length, must be an odd number, and `fl = 5` provides a seasonal smoothing window, preserving the seasonality
-                               forder = 2) # forder: Filter order (polynomial degree), and 2 or 3 is standard for NDVI
+  x_smoothed <- pracma::savgol(
+    x_interp,
+    fl = 5,
+    forder = 2
+  )
   
   return(x_smoothed)
 }
 
-## Applying the gap filling with Savitzky-Golay filter
+message("Gap-filling and smoothing the continuous multi-year NDVI dataset with Savitzky-Golay...")
 
-message("Gap filling the dataset...")
-
-# Apply the function across the SpatRaster
-
-Knepp_Buffered_Timeseries.NDVI.Cleaned <- app( # terra::app() to push the function through the Z-axis (time) of the raster
-  Knepp_Buffered_Timeseries.NDVI, 
-  fun = sg_gapfill, 
-  cores = detectCores() - 2 # Set cores as available
+Knepp_Buffered_Timeseries.NDVI.Cleaned <- app(
+  Knepp_Buffered_Timeseries.NDVI,
+  fun = sg_gapfill,
+  cores = knepp.cores
 )
 
-## Restore the original layer names (e.g., "2000-01_NDVI")
-# terra::app() stripped the layer names, so they're reassigned from the original object
+# Restore layer names stripped by terra::app()
 
-names(Knepp_Buffered_Timeseries.NDVI.Cleaned) <- names(Knepp_Buffered_Timeseries.NDVI) # This only works if missing temporal slices have been inserted
+names(Knepp_Buffered_Timeseries.NDVI.Cleaned) <- names(Knepp_Buffered_Timeseries.NDVI)
 
-message("Gap-filling complete. Ready for TWDTW analysis.")
+# Re-mask against the buffered boundary to ensure background pixels remain strict NAs
 
-## Write the raster to disk (and load back in if necessary)
+if (crs(KneppEstate_Buffered_Boundaries) != crs(Knepp_Buffered_Timeseries.NDVI.Cleaned)) {
+  KneppEstate_Buffered_Boundaries <- project(KneppEstate_Buffered_Boundaries, crs(Knepp_Buffered_Timeseries.NDVI.Cleaned))
+}
+Knepp_Buffered_Timeseries.NDVI.Cleaned <- mask(Knepp_Buffered_Timeseries.NDVI.Cleaned, KneppEstate_Buffered_Boundaries)
 
-writeRaster( # Write to disk
+message("Gap-filling complete! Writing cleaned multi-year NDVI stack to disk...")
+
+writeRaster(
   Knepp_Buffered_Timeseries.NDVI.Cleaned,
   filename = file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Cleaned_SG-method.tif"),
   overwrite = TRUE
 )
-Knepp_Buffered_Timeseries.NDVI.Cleaned <- rast( # Load back in if necessary
-  file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Cleaned_SG-method.tif")) # R environment doesn't save external C++ objects like rasters
 
-# OPTIONAL: View the gap-free raster
+# Reload from disk so the SpatRaster points cleanly to the file
 
-print(Knepp_Buffered_Timeseries.NDVI.Cleaned) # Summary
+Knepp_Buffered_Timeseries.NDVI.Cleaned <- rast(
+  file.path(Knepp_Processed, "Knepp_Buffered_NDVI_Cleaned_SG-method.tif")
+) # Load it back in!
 
-# 1. Calculate the global min and max across all 3 years and 12 months
+print(Knepp_Buffered_Timeseries.NDVI.Cleaned)
 
-tmp.global_range <- range(minmax(Knepp_Buffered_Timeseries.NDVI.Cleaned), na.rm = TRUE)
-
-for (i in 1:12) {
-  
-  # 2. Find all layers that match the current month (e.g., "-01_NDVI")
-  
-  tmp.month_regex <- sprintf("-%02d_NDVI", i)
-  tmp.month_stack <- Knepp_Buffered_Timeseries.NDVI.Cleaned[[grep(tmp.month_regex, names(Knepp_Buffered_Timeseries.NDVI.Cleaned))]]
-  
-  # 3. Plot all years for this month side-by-side, locked to the global colour scale
-  
-  plot(
-    tmp.month_stack, 
-    range = tmp.global_range,
-    main = names(tmp.month_stack)
-  )
-  
-  # 4. Pause the loop so you can actually inspect the plot before it moves to the next month
-  
-  invisible(readline(prompt = paste("Displaying Month", sprintf("%02d", i), "- Press [Enter] in the console to view the next month...")))
-}
-
-# 5. Wipe all temporary variables to keep the workspace completely uncluttered
-
-rm(i, tmp.global_range, tmp.month_regex, tmp.month_stack)
-
-## Calculate the mean seasonal trajectory across the site ####
-# Crop to Knepp Estate site boundaries
+### Calculate and plot the mean seasonal trajectory across the site ####
+# 1. Crop and mask to the inner Knepp Estate boundary
 
 Knepp_Timeseries.NDVI <- crop(
-  Knepp_Buffered_Timeseries.NDVI.Cleaned, 
-  project(KneppEstate_Boundaries, crs(KneppEstate_Buffered_Boundaries)),
+  Knepp_Buffered_Timeseries.NDVI.Cleaned,
+  project(KneppEstate_Boundaries, crs(Knepp_Buffered_Timeseries.NDVI.Cleaned)),
   mask = TRUE
 )
 
-# Calculate the site's mean value for each month
+Knepp_Timeseries_Mean.NDVI <- global(Knepp_Timeseries.NDVI, fun = "mean", na.rm = TRUE)
 
-Knepp_Timeseries_Mean.NDVI <- global(Knepp_Timeseries.NDVI, fun = "mean", na.rm = TRUE) 
-
-# Calculate the mean for values outside the Knepp Estate
-# Use inverse = TRUE to blank out the inside of the estate, keeping the surrounding farmland
+# 2. Mask out the inside of the Knepp Estate (inverse = TRUE) to isolate the surrounding 5 km farmland
 
 Knepp_Environs_Timeseries.NDVI <- mask(
-  Knepp_Buffered_Timeseries.NDVI.Cleaned, 
-  project(KneppEstate_Boundaries, crs(Knepp_Buffered_Timeseries.NDVI.Cleaned)), 
+  Knepp_Buffered_Timeseries.NDVI.Cleaned,
+  project(KneppEstate_Boundaries, crs(Knepp_Buffered_Timeseries.NDVI.Cleaned)),
   inverse = TRUE
 )
 
-# Calculate the mean site value for each month for the outside farmland
-
 Knepp_Environs_Timeseries.NDVI <- global(Knepp_Environs_Timeseries.NDVI, fun = "mean", na.rm = TRUE)
 
-## Plot the seasonal NDVI trajectories
-# 1. Initiate the plot with the inside data
+# 3. Export the 4K comparison plot of the continuous multi-year trajectories
 
-png(file.path(Knepp_Results, "Knepp_Estate_NDVI_Mean_Timeseries.png"), # Specifies that I want a 4K resolution .png file
+png(file.path(Knepp_Results, "Knepp_Estate_NDVI_Mean_Timeseries.png"),
     width = 3840, height = 2160, res = 150)
 
-plot(Knepp.full.dates, Knepp_Timeseries_Mean.NDVI[,1], # Starts the plot
+plot(Knepp.full.dates, Knepp_Timeseries_Mean.NDVI[, 1],
      type = "l",
      lwd = 2,
      col = "forestgreen",
-     ylim = range(c(Knepp_Timeseries_Mean.NDVI[,1], Knepp_Environs_Timeseries.NDVI[,1]), na.rm = TRUE),
+     ylim = range(c(Knepp_Timeseries_Mean.NDVI[, 1], Knepp_Environs_Timeseries.NDVI[, 1]), na.rm = TRUE),
      xlab = "Date",
      ylab = "Mean NDVI",
-     main = "Knepp Estate vs. Surrounding Farmland - Mean NDVI",
-     xaxt = "n") 
+     main = "Knepp Estate vs. Surrounding Farmland - Continuous Mean NDVI",
+     xaxt = "n")
 
-# 2. Add the Outside data line
-
-lines(Knepp.full.dates, Knepp_Environs_Timeseries.NDVI[,1], 
-      lwd = 2, 
+lines(Knepp.full.dates, Knepp_Environs_Timeseries.NDVI[, 1],
+      lwd = 2,
       col = "chocolate")
-
-# 3. Add horizontal and vertical gridlines
 
 grid(nx = NA, ny = NULL, col = "lightgray", lty = "dotted")
 
-# 4. Add custom X-axis minor ticks (every month, no labels, shorter tick length)
+# Minor monthly ticks and major yearly ticks
 
 axis.Date(1, at = Knepp.full.dates, labels = FALSE, tcl = -0.25)
-
-# 5. Add custom X-axis major ticks (every year, with labels, longer tick length)
-# This dynamically finds the unique years in your dataset to place the major labels
-
-axis.Date(1, 
-          at = as.Date(paste0(unique(format(Knepp.full.dates, "%Y")), "-01-15")), 
-          format = "%Y", 
+axis.Date(1,
+          at = as.Date(paste0(unique(format(Knepp.full.dates, "%Y")), "-01-15")),
+          format = "%Y",
           tcl = -0.5)
 
-# 6. Add a legend
+legend("topright",
+       legend = c("Knepp Estate", "Environs surrounding Knepp"),
+       col = c("forestgreen", "chocolate"),
+       lwd = 2,
+       bty = "n")
 
-legend("topright", 
-       legend = c("Knepp Estate", "Environs surrounding Knepp"), 
-       col = c("forestgreen", "chocolate"), 
-       lwd = 2, 
-       bty = "n") # 'n' removes the ugly bounding box around the legend
+dev.off()
 
-# Save the file
+### 1. Shannon-Wiener Index ####
 
-dev.off() # This actually exports the plot to the file
+message("Calculating Shannon-Wiener diversity index across the 2019-2024 SG-filtered stack...")
 
-### Single year diversity analyses ####
-## Select the years and dynamically set the years of interest for this analysis
-# Extract year from the time vector
+# Collapse the 72-layer time series into a single multi-year mean NDVI raster
 
-Knepp.years <- format(Knepp.full.dates, "%Y")
+Knepp_Mean_SG <- app(Knepp_Buffered_Timeseries.NDVI.Cleaned, fun = mean, na.rm = TRUE)
+writeRaster(Knepp_Mean_SG, file.path(Knepp_Processed, "Knepp_2019-2024_MeanNDVI_SG.tif"), overwrite = TRUE)
+Knepp_Mean_SG <- rast(file.path(Knepp_Processed, "Knepp_2019-2024_MeanNDVI_SG.tif")) # Load back in from disk
 
-# Define Years of Interest (Abbreviation: YoI)
+# Simplify the raster to 2 decimal places to prevent numerical oversaturation in Shannon's H
+# (Note: Rasters were already scaled by / 10000 in Step 1, so no division is needed here!)
 
-YoI <- unique(Knepp.years)
+Knepp_Mean_SG2dec <- trim(round(Knepp_Mean_SG, 2))
 
-# Create list of NDVI stacks per year
+# Convert the SpatRaster to a wide matrix (required by ShannonS) and compute Shannon's H (3x3 window)
 
-Knepp_NDVI_YoI <- lapply(YoI, function(y) {
-  Knepp_Buffered_Timeseries.NDVI.Cleaned[[Knepp.years == y]]
-})
-
-# Name the list elements
-
-names(Knepp_NDVI_YoI) <- YoI
-
-### Compute the Shannon-Wiener Index for each year ####
-## Define a Shannon's H function
-
-message("Calculating Shannon-Wiener diversity index...")
-
-compute_shannon_year <- function(r_stack, year) {
-  
-  message("Processing Shannon's H for year: ", year)
-  
-  # Mean NDVI (collapse time)
-  
-  mean_ndvi <- app(r_stack, mean, na.rm = TRUE)
-  
-  # 1. Scale Sentinel-2 NDVI back to a standard -1 to 1 float range
-  
-  mean_ndvi_scaled <- mean_ndvi / 10000
-  
-  # 2. Avoid numerical saturation by rounding to 2 decimal places to create classes
-  
-  mean_ndvi_2dec <- round(mean_ndvi_scaled, 2)
-  
-  # Calculate the Shannon-Wiener index
-  
-  shannon_mat <- rasterdiv::ShannonS(
-    x = terra::as.matrix(mean_ndvi_2dec, wide = TRUE),
-    window = 3,
-    na.tolerance = 0
-  )
-  
-  # Convert the matrix back to a raster
-  
-  shannon_rast <- rast(shannon_mat)
-  ext(shannon_rast) <- ext(mean_ndvi_2dec)
-  crs(shannon_rast) <- crs(mean_ndvi_2dec)
-  names(shannon_rast) <- paste0("ShannonH_", year)
-  
-  # Define an output file path
-  
-  out_path <- file.path(
-    Knepp_Results,
-    paste0("Knepp_", year,"_NDVI_ShannonH", ".tif")
-  )
-  
-  # Write the raster
-  
-  writeRaster(
-    shannon_rast,
-    filename = out_path,
-    overwrite = TRUE
-  )
-  
-  return(shannon_rast)
-}
-
-## Apply the Shannon's H function to my rasters
-
-Knepp_NDVI_ShannonH_YoI <- mapply(
-  compute_shannon_year,
-  Knepp_NDVI_YoI,
-  names(Knepp_NDVI_YoI),
-  SIMPLIFY = FALSE
+Knepp.ShannonH.SG.matrix <- rasterdiv::ShannonS(
+  x = terra::as.matrix(Knepp_Mean_SG2dec, wide = TRUE),
+  window = 3,
+  na.tolerance = 0
 )
 
-# Load them back in again if necessary
+# Convert the resulting matrix back into a SpatRaster and restore spatial metadata
 
-message("Loading Shannon's H rasters from disk...")
+Knepp_ShannonH_SG <- rast(Knepp.ShannonH.SG.matrix)
+ext(Knepp_ShannonH_SG) <- ext(Knepp_Mean_SG2dec)
+crs(Knepp_ShannonH_SG) <- crs(Knepp_Mean_SG2dec)
+names(Knepp_ShannonH_SG) <- "ShannonH_SG"
 
-# Loop over the Years of Interest (YoI) using 'y' as the iterator
+# Extend back to the untrimmed Knepp_Mean_SG template so extents match 100% when stacking later
 
-Knepp_NDVI_ShannonH_YoI <- lapply(YoI, function(y) {
-  
-  # Ensure we use 'y' to construct the file string, not 'year'
-  
-  tmp.file.path <- file.path(Knepp_Results, paste0("Knepp_", y, "_NDVI_ShannonH.tif"))
-  
-  # Import the raster
-  
-  tmp.imported.ShannonH.raster <- rast(tmp.file.path)
-  
-  return(tmp.imported.ShannonH.raster)
-})
+Knepp_ShannonH_SG <- terra::extend(Knepp_ShannonH_SG, Knepp_Mean_SG)
 
-# Name the elements of the list so you can call them by year (e.g., Knepp_NDVI_ShannonH_YoI[["2000"]])
+# Export the final Shannon's H raster to Results and reload
 
-names(Knepp_NDVI_ShannonH_YoI) <- YoI
+writeRaster(
+  Knepp_ShannonH_SG,
+  filename = file.path(Knepp_Results, "Knepp_2019-2024_NDVI_ShannonH_SG.tif"),
+  overwrite = TRUE
+)
+Knepp_ShannonH_SG <- rast( # Load it back in!
+  file.path(Knepp_Results, "Knepp_2019-2024_NDVI_ShannonH_SG.tif"))
 
-message("Shannon's H rasters successfully loaded.")
+message("Shannon's H calculation complete!")
 
-### Mosaic tiles for export and parallelisation on HPC (MaRC3a) ####
-## Due to the size of the site and the need to run concurrently on 4 discrete years of data
-## I will mosaic the dataset into 500 tiles (similar to the Kili analysis) for later processing on the HPC
+### 2. Classic Rao's Q ####
+## Due to the size of the 10m Sentinel-2 site, we tile the dataset into 500 tiles
+## for parallel processing on the MaRC3a HPC cluster, mirroring the Kilimanjaro pipeline.
 
-Knepp_NDVI_tile_info <- list()  # store metadata for later
+message("Preparing 1000-tile grid for Knepp Estate Classic & TWDTW Rao's Q...")
 
-for (y in YoI) {
-  
-  message("Creating tiles for year: ", y)
-  
-  # Get rasters
-  
-  tmp.r_stack <- Knepp_NDVI_YoI[[y]] # This is the original, uncleaned stack. It will be reactivated when I have gap-filled data
-  # tmp.r_stack <- Knepp_NDVI_YoI_Clean[[y]] # This is the cleaned stack, with only pixels with complete data across all layers
-  tmp.mean_raster <- app(tmp.r_stack, mean, na.rm = TRUE)
-  
-  # Trim outer NA borders (important for efficiency)
-  
-  tmp.trimmed_mean <- trim(tmp.mean_raster)
-  
-  ## Create a tiling grid
-  
-  knepp.tile.count <- 500  # same philosophy as Kili, but fewer tiles
-  
-  # Determine dimensions for tiling grid based on the aspect ratio of the raster
-  
-  knepp.aspect.ratio <- ncol(tmp.trimmed_mean) / nrow(tmp.trimmed_mean)
-  
-  knepp.tiling.factors <- expand.grid(
-    ncols = 1:knepp.tile.count,
-    nrows = 1:knepp.tile.count
-  )
-  
-  knepp.tiling.factors <- knepp.tiling.factors[
-    knepp.tiling.factors$ncols * knepp.tiling.factors$nrows == knepp.tile.count, ]
-  
-  knepp.tiling.factors$ratio_diff <- abs(
-    (knepp.tiling.factors$ncols / knepp.tiling.factors$nrows) - knepp.aspect.ratio
-  )
-  
-  knepp.tile.target.size <- knepp.tiling.factors[which.min(knepp.tiling.factors$ratio_diff), ]
-  
-  knepp.cols <- knepp.tile.target.size$ncols
-  knepp.rows <- knepp.tile.target.size$nrows
-  
-  # Generate tiling grid as polygons (important for later spatial operations)
-  
-  knepp.tiling.grid <- as.polygons(
-    rast(
-      ext(tmp.trimmed_mean),
-      ncols = knepp.cols,
-      nrows = knepp.rows,
-      crs = crs(tmp.trimmed_mean)
-    )
-  )
-  
-  # Save the grids (important for reproducibility + debugging)
-  
-  knepp.tiles.filepath <- file.path(Knepp_Processed, paste0("Knepp_Tiling_Grid_", y, ".geojson"))
-  
-  writeVector(knepp.tiling.grid, knepp.tiles.filepath, filetype = "GeoJSON", overwrite = TRUE)
-  
-  knepp.tiling.grid <- vect(knepp.tiles.filepath)
-  
-  ## Create tile overplotting margin so that the moving window of Rao's Q can be computed without edge effects
-  
-  RaoQ.window.size <- 3 # In `paRao` function, ensure moving window size is equal to this value!
-  tmp.tile.overlap <- floor(RaoQ.window.size / 2)
-  
-  ## Define output directories
-  
-  tmp.knepp.mean.tile.dir <- file.path(Knepp_Processed, paste0("Knepp_", y, "_MeanNDVI_Tiles"))
-  tmp.knepp.ts.tile.dir   <- file.path(Knepp_Processed, paste0("Knepp_", y, "_NDVI_Timeseries_Tiles"))
-  
-  dir.create(tmp.knepp.mean.tile.dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(tmp.knepp.ts.tile.dir, recursive = TRUE, showWarnings = FALSE)
-  
-  ## Save the time vector (for TWDTW)
-  
-  tmp.time.vector <- Knepp_Time[Knepp.years == y]
-  
-  writeLines(
-    as.character(tmp.time.vector),
-    file.path(tmp.knepp.ts.tile.dir, "time_vector.txt")
-  )
-  
-  ## Write the tiles to disk
-  
-  message("Tiling NDVI MEAN raster for year: ", y)
-  
-  makeTiles(
-    tmp.trimmed_mean,
-    y = knepp.tiling.grid,
-    buffer = tmp.tile.overlap,
-    filename = file.path(tmp.knepp.mean.tile.dir, paste0("Knepp_", y, "_Mean_Tile-.tif")),
-    overwrite = TRUE
-  )
-  
-  message("Tiling NDVI TIMESERIES raster for year: ", y)
-  
-  makeTiles(
-    tmp.r_stack,
-    y = knepp.tiling.grid,
-    buffer = tmp.tile.overlap,
-    filename = file.path(tmp.knepp.ts.tile.dir, paste0("Knepp_", y, "_TS_Tile-.tif")),
-    overwrite = TRUE
-  )
-  
-  ## Store the metadata for later :-)
-  
-  Knepp_NDVI_tile_info[[y]] <- list(
-    cols = knepp.cols,
-    rows = knepp.rows,
-    n_tiles = knepp.tile.count,
-    mean_dir = tmp.knepp.mean.tile.dir,
-    ts_dir = tmp.knepp.ts.tile.dir
-  )
-}
+### Step 1: Create a master grid to define zones for tiling
 
-### Demosaic Knepp Estate tiles for further analysis and visualisation ####
-## First, I will define a function that can demosaic tiles
+# Trim outer NA borders from the mean raster so tiles are only generated over valid data
 
-Knepp_Demosaic_RaoTiles <- function(tile_dir, output_file) {
-  
-  message("Reading tiles from: ", tile_dir)
-  
-  tile_files <- list.files(tile_dir, pattern = "\\.tif$", full.names = TRUE)
-  
-  if (length(tile_files) == 0) {
-    stop("No tiles found in: ", tile_dir)
-  }
-  
-  # Read all tiles
-  
-  tile_list <- lapply(tile_files, rast)
-  
-  message("Mosaicing ", length(tile_list), " tiles...")
-  
-  # Merge tiles (mean handles overlap nicely)
-  
-  mosaiced <- do.call(mosaic, c(tile_list, fun = "mean"))
-  
-  message("Trimming outer NA borders...")
-  
-  mosaiced <- trim(mosaiced)
-  
-  message("Writing output...")
-  
-  writeRaster(mosaiced, output_file, overwrite = TRUE)
-  
-  message("Done: ", output_file)
-  
-  return(mosaiced)
-}
+trimmed.Knepp_Mean_Raster <- trim(Knepp_Mean_SG)
 
-## Secondly, I will apply this function to the tiles for each year and Rao's Q method
+# Define target number of tiles (750 tiles for Knepp Estate) and raster aspect ratio
 
-Knepp_Rao_Outputs_Dir <- file.path(Knepp_Processed) # Tell R where to find the files
+knepp.total.tiles  <- 750
+knepp.aspect.ratio <- ncol(trimmed.Knepp_Mean_Raster) / nrow(trimmed.Knepp_Mean_Raster)
 
-# Now demosaic the classical Rao's Q tiles
+# Find all factor pairs that multiply to exactly 750
 
-for (y in YoI) {
-  
-  message("Demosaicing Classical Rao for year: ", y)
-  
-  tile_dir <- file.path(
-    Knepp_Rao_Outputs_Dir,
-    paste0("Knepp_", y, "_MeanNDVI_Tiles"),
-    "Rao-utputs"
-  )
-  
-  out_file <- file.path(
-    Knepp_Results,
-    paste0("Knepp_", y, "_NDVI_ClassicRao.tif")
-  )
-  
-  Knepp_Demosaic_RaoTiles(tile_dir, out_file)
-}
-
-# And now demosaic the TWDTW Rao's Q tiles
-
-for (y in YoI) {
-  
-  message("Demosaicing TWDTW Rao for year: ", y)
-  
-  tile_dir <- file.path(
-    Knepp_Rao_Outputs_Dir,
-    paste0("Knepp_", y, "_NDVI_Timeseries_Tiles"),
-    "Rao-utputs"
-  )
-  
-  out_file <- file.path(
-    Knepp_Results,
-    paste0("Knepp_", y, "_NDVI_TWDTW_Rao.tif")
-  )
-  
-  Knepp_Demosaic_RaoTiles(tile_dir, out_file)
-}
-
-## As both of these are saved externally, I now need to load them back in to my R environment
-# Classic Rao's Q
-
-Knepp_NDVI_Classic_Rao_YoI <- lapply(YoI, function(y) {
-  rast(file.path(Knepp_Results, paste0("Knepp_", y, "_NDVI_ClassicRao.tif")))
-})
-
-names(Knepp_NDVI_Classic_Rao_YoI) <- YoI # Rename each layer to the corresponding year
-
-# TWDTW Rao's Q
-
-Knepp_NDVI_TWDTW_Rao_YoI <- lapply(YoI, function(y) {
-  rast(file.path(Knepp_Results, paste0("Knepp_", y, "_NDVI_TWDTW_Rao.tif")))
-})
-
-names(Knepp_NDVI_TWDTW_Rao_YoI) <- YoI
-
-### Comparison to land cover data ####
-## Load and process the land cover maps from the UK's Centre for Ecology and Hydrology
-# Load the spatial rasters
-
-Knepp_CEH_LandCover_2017 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2017/data/LCM_2017.tif"))
-Knepp_CEH_LandCover_2019 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2019/data/LCM_2019.tif"))
-Knepp_CEH_LandCover_2020 <- rast(file.path(Knepp_Input, "CEH Land-cover data/Year_2020/data/LCM2020.tif"))
-
-# Put them in a list for convenience
-
-Knepp_CEH_LandCover_YoI <- list(
-  "2017" = Knepp_CEH_LandCover_2017,
-  "2019" = Knepp_CEH_LandCover_2019,
-  "2020" = Knepp_CEH_LandCover_2020
+knepp.tiling.factors <- expand.grid(
+  ncols = 1:knepp.total.tiles,
+  nrows = 1:knepp.total.tiles
 )
 
-## Combine all my indices into one object for convenience
+knepp.tiling.factors <- knepp.tiling.factors[
+  knepp.tiling.factors$ncols * knepp.tiling.factors$nrows == knepp.total.tiles, 
+]
 
-Knepp_Indices_YoI.NDVI_derived <- lapply(YoI, function(y) {
-  
-  message("Rebuilding index object for year: ", y)
-  
-  list(
-    Knepp_NDVI_ShannonsH = Knepp_NDVI_ShannonH_YoI[[y]],
-    Knepp_NDVI_Classic_RaoQ = Knepp_NDVI_Classic_Rao_YoI[[y]],
-    Knepp_NDVI_TWDTW_RaoQ = Knepp_NDVI_TWDTW_Rao_YoI[[y]]
-  )
-})
+# Choose the factor pair whose column-to-row ratio is closest to the raster's aspect ratio
 
-names(Knepp_Indices_YoI.NDVI_derived) <- YoI
-
-## Align the computed indices to the CEH land cover data, and name the layers accordingly
-# First, a helper function to compare and reproject CRSs
-
-align_to_lc <- function(r, lc) {
-  project(r, lc)  # always reproject to the CRSs to match
-}
-
-# This function aligns my indices to the land cover data and stacks them for analysis
-
-Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(names(Knepp_Indices_YoI.NDVI_derived), function(y) {
-  
-  message("Aligning year: ", y)
-  
-  idx_list <- Knepp_Indices_YoI.NDVI_derived[[y]]
-  lc <- Knepp_CEH_LandCover_YoI[[y]][[1]]
-  
-  # FORCE CRS match
-  
-  shannon <- project(idx_list$Knepp_NDVI_ShannonsH, lc)
-  classic <- project(idx_list$Knepp_NDVI_Classic_RaoQ, lc)
-  twdtw   <- project(idx_list$Knepp_NDVI_TWDTW_RaoQ, lc)
-  
-  # Resample to LC grid
-  
-  shannon_r <- resample(shannon, lc, method = "bilinear")[[1]]
-  classic_r <- resample(classic, lc, method = "bilinear")[[1]]
-  twdtw_r   <- resample(twdtw,   lc, method = "bilinear")[[1]]
-  
-  aligned_stack <- c(shannon_r, classic_r, twdtw_r, lc)
-  
-  names(aligned_stack) <- c(
-    "ShannonH",
-    "RaosQ_Classic",
-    "RaosQ_TWDTW",
-    "LandCover"
-  )
-  
-  return(aligned_stack)
-})
-
-names(Knepp_LandCover_AlignedIndices_YoI.NDVI) <- names(Knepp_Indices_YoI.NDVI_derived)
-
-## Now I will crop and mask the land cover rasters to just the areas in my analysis
-# I'm using the buffered site so I can compare inside the estate and out
-
-Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(
-  Knepp_LandCover_AlignedIndices_YoI.NDVI,
-  function(stack) {
-    
-    # Align polygon CRS to raster
-    
-    boundary_aligned <- project(KneppEstate_Buffered_Boundaries, stack)
-    
-    cropped <- crop(stack, boundary_aligned)
-    masked  <- mask(cropped, boundary_aligned)
-    
-    return(masked)
-  }
+knepp.tiling.factors$ratio_diff <- abs(
+  (knepp.tiling.factors$ncols / knepp.tiling.factors$nrows) - knepp.aspect.ratio
 )
 
-## OPTIONAL: export these rasters so I don't have to recreate them every time I run the script
-# My object is a list of rasters, but not itself a raster, so  I need to export each year separately
+knepp.best.tile.size <- knepp.tiling.factors[which.min(knepp.tiling.factors$ratio_diff), ]
 
-for (y in names(Knepp_LandCover_AlignedIndices_YoI.NDVI)) {
-  
-  r <- Knepp_LandCover_AlignedIndices_YoI.NDVI[[y]]
-  
-  out_file <- file.path(
-    Knepp_Results,
-    paste0("Knepp_", y, "_Sentinel_Aligned_Indices_NDVI.tif")
-  )
-  
-  writeRaster(
-    r,
-    filename = out_file,
-    overwrite = TRUE
-  )
-}
+knepp.cols <- knepp.best.tile.size$ncols
+knepp.rows <- knepp.best.tile.size$nrows
 
-## Load the raster back in (if necessary)
+# Generate the spatial polygon tiling grid
 
-Knepp_LandCover_AlignedIndices_YoI.NDVI <- lapply(YoI, function(y) {
-  
+knepp.tiling.grid <- as.polygons(
   rast(
-    file.path(Knepp_Results, paste0("Knepp_", y, "_Sentinel_Aligned_Indices_NDVI.tif"))
+    ext(trimmed.Knepp_Mean_Raster),
+    ncols = knepp.cols,
+    nrows = knepp.rows,
+    crs   = crs(trimmed.Knepp_Mean_Raster)
   )
-})
+)
 
-names(Knepp_LandCover_AlignedIndices_YoI.NDVI) <- YoI
+# Export the tiling grid as a GeoJSON for reproducibility and use in the 05.3 alpha grid search
 
-### PERMANOVAs to assess the indices's performance
+knepp.tiles.filepath <- file.path(Knepp_Processed, "Knepp_Tiling_Grid_Polygons.geojson")
+writeVector(knepp.tiling.grid, knepp.tiles.filepath, filetype = "GeoJSON", overwrite = TRUE)
+knepp.tiling.grid <- vect(knepp.tiles.filepath)
 
-message("Beginning PERMANOVA calculations with checkpointing...")
+plot(knepp.tiling.grid, main = "Knepp Estate 750-Tile Grid (2019-2024)")
 
-# 1. Initialize an empty list to store the final combined results
+# Define moving window size and 1-pixel overlap buffer so Rao's Q has no tile-edge NAs
 
-Knepp_PERMANOVA_YoI.NDVI <- list()
+RaoQ.window.size   <- 3
+knepp.tile.overlap <- floor(RaoQ.window.size / 2)
 
-# 2. Extract the years we need to loop through
+# Create directory for Classic Rao's Q input tiles (Mean NDVI)
 
-for (y in YoI) {
-  
-  message(">> Processing Year: ", y)
-  
-  df <- Knepp_DF_YoI.NDVI[[y]]
-  
-  ## Subsample the dataframe
-  # Use a set seed so if the script restarts, it draws the exact same 10,000 pixels!
-  
-  set.seed(123) # Should have been given in the setup script, but here again in case 
-  sample_size <- min(10000, nrow(df))
-  df_subset <- df[sample(nrow(df), sample_size), ]
-  
-  # Define individual checkpoint file paths for this specific year
-  
-  file_shannon <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_Shannon.rds"))
-  file_classic <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_Classic.rds"))
-  file_twdtw   <- file.path(Knepp_Results, paste0("Knepp_PERMANOVA_NDVI_", y, "_TWDTW.rds"))
-  
-  
-  ## 1. Shannon's H
-  
-  if (file.exists(file_shannon)) {
-    message(paste("  [✓] Shannon PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
-    res_shannon <- readRDS(file_shannon)
-  } else {
-    message(paste("  [ ] Calculating Shannon PERMANOVA...", Sys.time()))
-    res_shannon <- adonis2(df_subset$ShannonH ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
-    saveRDS(res_shannon, file_shannon)
-    message(paste("  [✓] Shannon PERMANOVA saved.", Sys.time()))
-  }
-  
-  
-  ## 2. Classic Rao'S Q
-  
-  if (file.exists(file_classic)) {
-    message(paste("  [✓] Classic Rao PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
-    res_classic <- readRDS(file_classic)
-  } else {
-    message(paste("  [ ] Calculating Classic Rao PERMANOVA...", Sys.time()))
-    res_classic <- adonis2(df_subset$RaosQ_Classic ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
-    saveRDS(res_classic, file_classic)
-    message(paste("  [✓] Classic Rao PERMANOVA saved.", Sys.time()))
-  }
-  
-  
-  ## 3. TWDTW Rao'S Q
-  
-  if (file.exists(file_twdtw)) {
-    message(paste("  [✓] TWDTW Rao PERMANOVA already exists. Loading from checkpoint...", Sys.time()))
-    res_twdtw <- readRDS(file_twdtw)
-  } else {
-    message(paste("  [ ] Calculating TWDTW Rao PERMANOVA...", Sys.time()))
-    res_twdtw <- adonis2(df_subset$RaosQ_TWDTW ~ df_subset$LandCover, permutations = 999, parallel = parallel::detectCores() - 2)
-    saveRDS(res_twdtw, file_twdtw)
-    message(paste("  [✓] TWDTW Rao PERMANOVA saved.", Sys.time()))
-  }
-  
-  ## 4. Pack the year's results into the master list to perfectly match your old output format
-  
-  Knepp_PERMANOVA_YoI.NDVI[[y]] <- list(
-    Shannon = res_shannon,
-    Rao_Classic = res_classic,
-    Rao_TWDTW = res_twdtw
-  )
+knepp.tile.dir.sg <- file.path(Knepp_Processed, "Knepp_Tiles_NDVI_SG-Filtered")
+dir.create(knepp.tile.dir.sg, recursive = TRUE, showWarnings = FALSE)
+
+message("Generating 750 Mean NDVI tiles for Classic Rao's Q...")
+
+makeTiles(
+  trimmed.Knepp_Mean_Raster,
+  y        = knepp.tiling.grid,
+  buffer   = knepp.tile.overlap,
+  filename = file.path(knepp.tile.dir.sg, "Knepp_MeanNDVI_SG_Tile-.tif"),
+  overwrite = TRUE
+)
+
+### Step 2: Submit the Classic Rao's Q tiles for processing on MaRC3a
+## Please see script "05.1A_Knepp_NDVI_Classic-RaoQ_SG-Filtered.R" and its SLURM wrapper
+## for the HPC batch job execution. Run Step 3 below once all 750 tiles have finished on MaRC3a.
+
+### Step 3: Demosaic the classical Rao's Q tiles
+
+message("Demosaicing Classic Rao's Q tiles...")
+
+knepp.rao.files.sg <- list.files(
+  file.path(Knepp_Processed, "Knepp_Tiles_NDVI_SG-Filtered", "Rao-utputs"),
+  pattern    = "Knepp_NDVI_Classic-RaoQ_SG_Tile-",
+  full.names = TRUE
+)
+
+if (length(knepp.rao.files.sg) == 0) {
+  stop("No Classic Rao's Q output tiles found! Ensure MaRC3a jobs have completed and synced.")
 }
 
-# Save the consolidated master object
+# Stitch all 750 tiles back together using a SpatRasterCollection (sprc)
 
-message("\nSaving consolidated PERMANOVA list object...")
-saveRDS(Knepp_PERMANOVA_YoI.NDVI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_YoI_NDVI.rds"))
+Knepp_Classic_RaoQ_SG <- terra::mosaic(sprc(lapply(knepp.rao.files.sg, rast)))
 
-### Compile the Summary Dataframe
+# Extend to match the exact master extent of Knepp_Mean_SG
 
-message("Compiling PERMANOVA summary dataframe...")
+Knepp_Classic_RaoQ_SG <- terra::extend(Knepp_Classic_RaoQ_SG, Knepp_Mean_SG)
+names(Knepp_Classic_RaoQ_SG) <- "RaosQ_Classic_SG"
 
-Knepp_PERMANOVA_Summary.NDVI <- do.call(rbind, lapply(
-  names(Knepp_PERMANOVA_YoI.NDVI),
-  function(y) {
-    res <- Knepp_PERMANOVA_YoI.NDVI[[y]]
-    
-    data.frame(
-      Year = y,
-      Index = c("Shannon", "Classic Rao", "TWDTW Rao"),
-      R2 = c(
-        res$Shannon$R2[1],
-        res$Rao_Classic$R2[1],
-        res$Rao_TWDTW$R2[1]
-      ),
-      F = c(
-        res$Shannon$F[1],
-        res$Rao_Classic$F[1],
-        res$Rao_TWDTW$F[1]
-      ),
-      p_value = c(
-        res$Shannon$`Pr(>F)`[1],
-        res$Rao_Classic$`Pr(>F)`[1],
-        res$Rao_TWDTW$`Pr(>F)`[1]
-      )
-    )
-  }
-))
+writeRaster(
+  Knepp_Classic_RaoQ_SG,
+  filename = file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Classic-RaoQ_SG.tif"),
+  overwrite = TRUE
+)
+Knepp_Classic_RaoQ_SG <- rast(file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Classic-RaoQ_SG.tif"))
 
-saveRDS(Knepp_PERMANOVA_Summary.NDVI, file = file.path(Knepp_Results, "Knepp_PERMANOVA_Summary_NDVI.rds"))
+plot(Knepp_Classic_RaoQ_SG, main = "Knepp Estate Classic Rao's Q (NDVI 2019-2024)")
 
-message("Knepp Estate NDVI analysis complete.") # End of script ####
+### 3. Rao's Q with TWDTW ####
+
+message("Preparing 72-layer timeseries tiles for TWDTW Rao's Q...")
+
+### Step 1: Tile the continuous 2019-2024 NDVI timeseries stack
+
+knepp.twdtw.tile.dir.sg <- file.path(Knepp_Processed, "Knepp_TS_Tiles_NDVI_SG-Filtered")
+dir.create(knepp.twdtw.tile.dir.sg, recursive = TRUE, showWarnings = FALSE)
+
+# Save the 72-month date vector to disk so the MaRC3a worker scripts can load it directly
+# writeLines(
+#   as.character(Knepp.full.dates),
+#   file.path(knepp.twdtw.tile.dir.sg, "time_vector.txt")
+# )
+
+message("Generating 750 Timeseries NDVI tiles (2019-2024) for TWDTW Rao's Q...")
+
+makeTiles(
+  trim(Knepp_Buffered_Timeseries.NDVI.Cleaned),
+  y        = knepp.tiling.grid,
+  buffer   = knepp.tile.overlap,
+  filename = file.path(knepp.twdtw.tile.dir.sg, "Knepp_TS_NDVI_SG_Tile-.tif"),
+  overwrite = TRUE
+)
+
+### Step 2: Run the Alpha Grid Search (05.3) and submit TWDTW tiles on MaRC3a (05.2A)
+## 1. Run "05.3_Knepp_NDVI_α_Grid-search.R" to find the optimal TWDTW stepness (α).
+## 2. Submit "05.2A_Knepp_NDVI_TWDTW-RaoQ_SG-Filtered.R" via SLURM on MaRC3a.
+## 3. Once the 750 TWDTW tiles are synced back, run Step 3 below.
+
+### Step 3: Demosaic the raster tiles to create a final TWDTW Rao's Q raster
+
+message("Demosaicing TWDTW Rao's Q tiles...")
+
+knepp.twdtw.rao.files.sg <- list.files(
+  file.path(Knepp_Processed, "Knepp_TS_Tiles_NDVI_SG-Filtered", "Rao-utputs"),
+  pattern    = "Knepp_NDVI_TWDTW-RaoQ_SG_Tile-",
+  full.names = TRUE
+)
+
+if (length(knepp.twdtw.rao.files.sg) == 0) {
+  stop("No TWDTW Rao's Q output tiles found! Ensure MaRC3a jobs have completed and synced.")
+}
+
+Knepp_TWDTW_RaoQ_SG <- terra::mosaic(sprc(lapply(knepp.twdtw.rao.files.sg, rast)))
+
+# Extend to match the exact master extent of Knepp_Mean_SG
+
+Knepp_TWDTW_RaoQ_SG <- terra::extend(Knepp_TWDTW_RaoQ_SG, Knepp_Mean_SG)
+names(Knepp_TWDTW_RaoQ_SG) <- "RaosQ_TWDTW_SG"
+
+writeRaster(
+  Knepp_TWDTW_RaoQ_SG,
+  filename = file.path(Knepp_Results, "Knepp_2019-2024_NDVI_TWDTW-RaoQ_SG.tif"),
+  overwrite = TRUE
+)
+Knepp_TWDTW_RaoQ_SG <- rast(file.path(Knepp_Results, "Knepp_2019-2024_NDVI_TWDTW-RaoQ_SG.tif"))
+
+plot(Knepp_TWDTW_RaoQ_SG, main = "Knepp Estate TWDTW Rao's Q (NDVI 2019-2024)")
+
+### Export all rasters for comparison ####
+
+Knepp_Comparison_Rasters <- c(
+  Knepp_Mean_SG,
+  Knepp_ShannonH_SG,
+  Knepp_Classic_RaoQ_SG,
+  Knepp_TWDTW_RaoQ_SG
+)
+
+names(Knepp_Comparison_Rasters) <- c(
+  "Sentinel-2 MeanNDVI SG Gap-Filled",
+  "ShannonH SG (NDVI)",
+  "RaosQ Classic SG (NDVI)",
+  "RaosQ TWDTW SG (NDVI)"
+)
+
+writeRaster(
+  Knepp_Comparison_Rasters,
+  filename = file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Diversity_Comparison.tif"),
+  overwrite = TRUE
+)
+
+Knepp_Comparison_Rasters <- rast(file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Diversity_Comparison.tif"))
+
+# Export a 2x2 multipanel comparison figure for the manuscript
+
+png(file.path(Knepp_Results, "Knepp_NDVI-Based_Indices_Comparison.png"),
+    width = 2560, height = 1440, res = 150)
+
+plot(Knepp_Comparison_Rasters)
+
+dev.off()
+
+plot(Knepp_Comparison_Rasters)
