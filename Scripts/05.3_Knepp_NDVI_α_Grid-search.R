@@ -24,17 +24,42 @@ if (length(bad_dirs) > 0) {
   message("ALL CLEAR: Your folder paths are perfectly Linux-safe!")
 }
 
-### 1. Path Definitions ####
-## Adjust base paths if running on MaRC3a ("~/TWDTW_Paper/...") vs. Keller/Local
-InputData     <- file.path("~/TWDTW_Paper/Data/Input_Data")
-ProcessedData <- file.path("~/TWDTW_Paper/Data/Processed_Data")
-Results       <- file.path("~/TWDTW_Paper/Results")
+### Define the file paths and import the site data ####
+## 1. Internal Project Paths (Works on Keller Computer, or uncomment for MaRC3a)
+# Keller Computer paths
+InputData     <- here("Data/Input Data")
+ProcessedData <- here("Data/Processed Data")
+Results       <- here("Results 📈📉")
 
-## Knepp-specific paths
-Knepp_Input     <- file.path(InputData, "Knepp_Estate")
-Knepp_Processed <- file.path(ProcessedData, "Knepp_Estate")
-Knepp_Results   <- file.path(Results, "Knepp_Estate")
+# MaRC3a server paths
+# InputData     <- here("Data/Input_Data")
+# ProcessedData <- here("Data/Processed_Data")
+# Results       <- here("Results")
+
+# Keller Computer paths
+Knepp_Input     <- file.path(InputData, "Knepp Estate")
+Knepp_Processed <- file.path(ProcessedData, "Knepp Estate")
+Knepp_Results   <- file.path(Results, "Knepp Estate")
+
+# MaRC3a server paths
+# Knepp_Input     <- file.path(InputData, "Knepp_Estate")
+# Knepp_Processed <- file.path(ProcessedData, "Knepp_Estate")
+# Knepp_Results   <- file.path(Results, "Knepp_Estate")
 dir.create(Knepp_Results, showWarnings = FALSE, recursive = TRUE)
+
+## 2. External Drive Paths (for the massive raw Sentinel-2 inputs)
+# If your external drive sits outside the R project on the Keller Computer, 
+# you can use a simple if() check to point to it automatically:
+if (dir.exists("E:/Elliot Shayle/Knepp Estate Geodata")) {
+  # We are on the Keller Computer (Windows E: Drive)
+  Knepp_Input_Ext     <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Input Data"
+  Knepp_Processed_Ext <- "E:/Elliot Shayle/Knepp Estate Geodata/Sentinel-2 Processed Data"
+} else {
+  # We are on MaRC3a (Linux), so just use the standard project folders
+  Knepp_Input_Ext     <- Knepp_Input
+  Knepp_Processed_Ext <- Knepp_Processed
+}
+dir.create(Knepp_Processed_Ext, showWarnings = FALSE, recursive = TRUE)
 
 # Cap parallel workers to a safe limit (e.g., 12 cores) to prevent RAM duplication OOM crashes
 knepp.cores <- min(12, max(1, detectCores() - 2))
