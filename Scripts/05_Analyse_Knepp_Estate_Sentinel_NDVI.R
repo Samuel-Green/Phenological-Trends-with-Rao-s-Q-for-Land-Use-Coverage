@@ -454,7 +454,7 @@ Knepp_Classic_RaoQ_SG <- terra::mosaic(sprc(lapply(knepp.rao.files.sg, rast)))
 
 # Extend to match the exact master extent of Knepp_Mean_SG
 
-Knepp_Classic_RaoQ_SG <- terra::extend(Knepp_Classic_RaoQ_SG, Knepp_Mean_SG)
+# Knepp_Classic_RaoQ_SG <- terra::extend(Knepp_Classic_RaoQ_SG, Knepp_Mean_SG) Rasters are already of the same extent
 names(Knepp_Classic_RaoQ_SG) <- "RaosQ_Classic_SG"
 
 writeRaster(
@@ -514,7 +514,7 @@ Knepp_TWDTW_RaoQ_SG <- terra::mosaic(sprc(lapply(knepp.twdtw.rao.files.sg, rast)
 
 # Extend to match the exact master extent of Knepp_Mean_SG
 
-Knepp_TWDTW_RaoQ_SG <- terra::extend(Knepp_TWDTW_RaoQ_SG, Knepp_Mean_SG)
+# Knepp_TWDTW_RaoQ_SG <- terra::extend(Knepp_TWDTW_RaoQ_SG, Knepp_Mean_SG) Rasters are already of the same extent
 names(Knepp_TWDTW_RaoQ_SG) <- "RaosQ_TWDTW_SG"
 
 writeRaster(
@@ -560,3 +560,347 @@ plot(Knepp_Comparison_Rasters)
 dev.off()
 
 plot(Knepp_Comparison_Rasters)
+
+### Export all rasters for comparison ####
+## Stack the 2019-2024 Mean NDVI and all three SG-filtered diversity indices
+## (Mirrors the exact structure of 03_Analyse_Kilimanjaro_NDVI.R)
+
+message("Stacking and exporting 2019-2024 Knepp NDVI diversity rasters for comparison...")
+
+Knepp_Comparison_Rasters <- c(
+  Knepp_Mean_SG,
+  Knepp_ShannonH_SG,
+  Knepp_Classic_RaoQ_SG,
+  Knepp_TWDTW_RaoQ_SG
+)
+
+names(Knepp_Comparison_Rasters) <- c(
+  "Sentinel-2 MeanNDVI SG Gap-Filled",
+  "ShannonH SG (NDVI)",
+  "RaosQ Classic SG (NDVI)",
+  "RaosQ TWDTW SG (NDVI)"
+)
+
+# Export the combined 4-layer comparison stack so it doesn't need to be rebuilt each session
+writeRaster(
+  Knepp_Comparison_Rasters,
+  filename  = file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Diversity_Comparison.tif"),
+  overwrite = TRUE
+)
+
+Knepp_Comparison_Rasters <- rast(
+  file.path(Knepp_Results, "Knepp_2019-2024_NDVI_Diversity_Comparison.tif")
+) # Load it back in!
+
+# Export a 2x2 multipanel comparison plot for the manuscript
+png(file.path(Knepp_Results, "Knepp_NDVI-Based_Indices_Comparison.png"),
+    width = 2560, height = 1440, res = 150)
+
+plot(Knepp_Comparison_Rasters)
+
+dev.off()
+
+plot(Knepp_Comparison_Rasters) # Plot in RStudio viewer to inspect visually
+
+### Assess index performance using Strict Consensus UKCEH Land Cover (2019-2024) ####
+
+message("Assessing 2019-2024 diversity indices against Strict Consensus UKCEH Land Cover...")
+
+# 1. Define the 21 UKCEH Land Cover Classes lookup dictionary
+
+UKCEH_LC_Classes <- c(
+  "1"  = "Broadleaved woodland",
+  "2"  = "Coniferous woodland",
+  "3"  = "Arable and horticulture",
+  "4"  = "Improved grassland",
+  "5"  = "Neutral grassland",
+  "6"  = "Calcareous grassland",
+  "7"  = "Acid grassland",
+  "8"  = "Fen, marsh and swamp",
+  "9"  = "Heather",
+  "10" = "Heather grassland",
+  "11" = "Bog",
+  "12" = "Inland rock",
+  "13" = "Saltwater",
+  "14" = "Freshwater",
+  "15" = "Supralittoral rock",
+  "16" = "Supralittoral sediment",
+  "17" = "Littoral rock",
+  "18" = "Littoral sediment",
+  "19" = "Saltmarsh",
+  "20" = "Urban",
+  "21" = "Suburban"
+)
+
+# 2. Dynamically locate all UKCEH LCM .tif files for 2019-2024
+# (Checks both space and underscore folder names for Windows/Linux compatibility)
+
+ceh_base_dir <- file.path(Knepp_Input, "CEH Land-cover data")
+if (!dir.exists(ceh_base_dir)) {
+  ceh_base_dir <- file.path(Knepp_Input, "CEH_Land-cover_data")
+}
+
+ceh_tif_files <- list.files(
+  ceh_base_dir,
+  pattern    = "^LCM.*\\.tif$",
+  recursive  = TRUE,
+  full.names = TRUE
+)
+
+# Extract the 4-digit year from each path and keep only years within 2019-2024
+
+ceh_years     <- sub(".*(20\\d{2}).*", "\\1", ceh_tif_files)
+valid_ceh_idx <- which(ceh_years %in% as.character(2019:2024))
+
+ceh_tif_files <- ceh_tif_files[valid_ceh_idx]
+ceh_years     <- ceh_years[valid_ceh_idx]
+names(ceh_tif_files) <- ceh_years
+
+if (length(ceh_tif_files) == 0) {
+  stop("No UKCEH LCM .tif files found for 2019-2024 in: ", ceh_base_dir)
+}
+
+message("Aligning UKCEH Land Cover rasters for years: ", paste(ceh_years, collapse = ", "))
+
+# 3. Project and snap each UKCEH year's Band 1 (dominant class 1-21) to the 10m Sentinel-2 grid
+# Using method = "near" preserves discrete integer class IDs without bilinear blurring
+
+Knepp_LC_Aligned_List <- lapply(ceh_years, function(y) {
+  message("  -> Projecting and snapping UKCEH Land Cover for year: ", y)
+  lc_raw     <- rast(ceh_tif_files[[y]])[[1]]
+  lc_aligned <- project(lc_raw, Knepp_Comparison_Rasters[[1]], method = "near")
+  return(lc_aligned)
+})
+
+Knepp_LC_Stack <- rast(Knepp_LC_Aligned_List)
+
+# 4. Compute Strict Consensus UKCEH Land Cover Raster (Option A)
+# A pixel is retained if and only if its class ID remained invariant across all years (min == max).
+# Any pixel that changed class (land-use change or classifier noise) is masked to NA.
+
+message("Computing Strict Consensus UKCEH Land Cover layer (retaining invariant 2019-2024 pixels)...")
+lc_min         <- min(Knepp_LC_Stack, na.rm = FALSE)
+lc_max         <- max(Knepp_LC_Stack, na.rm = FALSE)
+consensus_mask <- (lc_min == lc_max)
+
+Knepp_LandCover_Consensus <- mask(Knepp_LC_Stack[[1]], consensus_mask, maskvalues = 0)
+names(Knepp_LandCover_Consensus) <- "Veg_GroundTruth"
+
+# Save the aligned Consensus Land Cover raster to Processed Data so 06_Analyse_Knepp_Estate_Sentinel_PPI.R
+# can load it directly without recomputing!
+
+writeRaster(
+  Knepp_LandCover_Consensus,
+  filename  = file.path(Knepp_Processed, "Knepp_2019-2024_UKCEH_Consensus_LandCover.tif"),
+  overwrite = TRUE
+)
+
+Knepp_LandCover_Consensus <- rast(
+  file.path(Knepp_Processed, "Knepp_2019-2024_UKCEH_Consensus_LandCover.tif")
+) # And load it back in!
+
+# 5. Bind the comparison rasters with the consensus ground truth and mask to the 5 km buffered boundary
+
+if (crs(KneppEstate_Buffered_Boundaries) != crs(Knepp_Comparison_Rasters)) {
+  KneppEstate_Buffered_Boundaries <- project(KneppEstate_Buffered_Boundaries, crs(Knepp_Comparison_Rasters))
+}
+
+Knepp_Indices_Comparison_Raster <- c(
+  Knepp_Comparison_Rasters,
+  Knepp_LandCover_Consensus
+)
+
+Knepp_Indices_Comparison_Raster <- mask(
+  crop(Knepp_Indices_Comparison_Raster, KneppEstate_Buffered_Boundaries),
+  KneppEstate_Buffered_Boundaries
+)
+
+# Export the aligned 5-layer stack for safekeeping
+
+writeRaster(
+  Knepp_Indices_Comparison_Raster,
+  filename  = file.path(Knepp_Results, "Knepp_2019-2024_Sentinel_Aligned_Indices_NDVI.tif"),
+  overwrite = TRUE
+)
+
+Knepp_Indices_Comparison_Raster <- rast(
+  file.path(Knepp_Results, "Knepp_2019-2024_Sentinel_Aligned_Indices_NDVI.tif")
+) # Load it back in for conversion to dataframe
+
+### Convert the index rasters to a dataframe for performance analysis ####
+
+message("Converting aligned raster stack to dataframe...")
+
+Knepp_Indices_Comparison_DF <- as.data.frame(
+  Knepp_Indices_Comparison_Raster,
+  na.rm = TRUE
+)
+
+colnames(Knepp_Indices_Comparison_DF) <- c(
+  "Sentinel-2 MeanNDVI SG Gap-Filled",
+  "ShannonH SG (NDVI)",
+  "RaosQ Classic SG (NDVI)",
+  "RaosQ TWDTW SG (NDVI)",
+  "Veg_GroundTruth"
+)
+
+# Translate the numeric UKCEH class codes (1-21) to descriptive UKCEH habitat names
+
+Knepp_Indices_Comparison_DF$Veg_GroundTruth <- UKCEH_LC_Classes[
+  as.character(Knepp_Indices_Comparison_DF$Veg_GroundTruth)
+]
+
+# Tabulate and export the frequency distribution of the invariant consensus land cover classes
+
+Knepp_Consensus_Freq_Table <- as.data.frame(table(Knepp_Indices_Comparison_DF$Veg_GroundTruth))
+colnames(Knepp_Consensus_Freq_Table) <- c("Land_Cover_Class", "Consensus_Pixels_2019_2024")
+Knepp_Consensus_Freq_Table <- Knepp_Consensus_Freq_Table[
+  order(-Knepp_Consensus_Freq_Table$Consensus_Pixels_2019_2024), 
+]
+
+print(Knepp_Consensus_Freq_Table)
+write.csv(
+  Knepp_Consensus_Freq_Table,
+  file      = file.path(Knepp_Results, "KneppBuffered_Consensus_LandCover_FrequencyDistribution.csv"),
+  row.names = FALSE
+)
+
+### PERMANOVA ####
+## Filter out 0 and NA edge artifacts and execute a stratified 10,000-pixel subsample
+## across the dominant UKCEH land cover classes, mirroring the Kilimanjaro pipeline.
+
+# 1. Strip out NA and 0 value background/boundary pixels across all index columns
+
+Knepp_NDVI_Filtered <- Knepp_Indices_Comparison_DF %>%
+  filter(!is.na(Veg_GroundTruth)) %>%
+  filter(if_all(-Veg_GroundTruth, ~ . != 0 & !is.na(.)))
+
+# 2. Specify the ecologically significant UKCEH classes present at the Knepp Estate
+
+target_classes <- c(
+  "Broadleaved woodland",
+  "Coniferous woodland",
+  "Arable and horticulture",
+  "Improved grassland",
+  "Freshwater", # Not originally suggested by Gemini but present in dataset
+  #"Neutral grassland", # Not present in data
+  #"Acid grassland", # Not present in data
+  "Urban",
+  "Suburban"
+)
+
+Knepp_NDVI_Filtered <- Knepp_NDVI_Filtered %>%
+  filter(Veg_GroundTruth %in% target_classes)
+
+present_classes <- unique(Knepp_NDVI_Filtered$Veg_GroundTruth)
+
+# 3. Calculate the equal split for the 17,500 pixel target
+# I chose 17,500 pixels so that each of the 7 LCCs can have 2,500 data points in the DF
+
+total_target_pixels <- 17500
+n_classes           <- length(present_classes)
+pixels_per_class    <- floor(total_target_pixels / n_classes)
+
+message("Sampling up to ", pixels_per_class, " consensus pixels across ", n_classes, " UKCEH land cover classes.")
+
+# 4. Execute the Stratified Subsample
+
+set.seed(123) # Same as from the setup script but here it is again anyway
+
+subset.Knepp_Indices_Comparison_DF <- Knepp_NDVI_Filtered %>%
+  group_by(Veg_GroundTruth) %>%
+  slice_sample(n = pixels_per_class, replace = FALSE) %>% # Safely takes all pixels if a class has < pixels_per_class
+  ungroup() %>%
+  as.data.frame()
+
+# 5. Save the filtered, stratified dataframe for reproducibility and fast reloading
+
+saveRDS(
+  subset.Knepp_Indices_Comparison_DF,
+  file = file.path(Knepp_Processed, "Knepp_NDVI_Comparison_DF_Filtered.rds")
+)
+
+subset.Knepp_Indices_Comparison_DF <- readRDS(
+  file.path(Knepp_Processed, "Knepp_NDVI_Comparison_DF_Filtered.rds")
+)
+
+### Conduct a series of PERMANOVAs ####
+## Create the PERMANOVAs subfolder inside the Knepp results directory
+
+Knepp_PERMANOVA_Dir <- file.path(Knepp_Results, "PERMANOVAs")
+dir.create(Knepp_PERMANOVA_Dir, showWarnings = FALSE, recursive = TRUE)
+
+message(paste0(Sys.time(), ": Starting SG-Filtered Knepp NDVI raster PERMANOVAs..."))
+
+# 1. SG-Filtered Shannon's H (NDVI) 
+
+message(paste0(Sys.time(), ": [1/3] Running PERMANOVA_Knepp_ShannonsH_SG..."))
+PERMANOVA_Knepp_ShannonsH_SG <- adonis2(
+  subset.Knepp_Indices_Comparison_DF$`ShannonH SG (NDVI)` ~ subset.Knepp_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999,
+  parallel     = permanova.cores
+)
+saveRDS(PERMANOVA_Knepp_ShannonsH_SG, file.path(Knepp_PERMANOVA_Dir, "PERMANOVA_Knepp_NDVI_ShannonsH_SG.rds"))
+message(paste0(Sys.time(), ": [1/3] Completed and saved PERMANOVA_Knepp_NDVI_ShannonsH_SG.rds"))
+gc()
+
+# 2. SG-Filtered Classic Rao's Q (NDVI) 
+
+message(paste0(Sys.time(), ": [2/3] Running PERMANOVA_Knepp_RaosQ_Classic_SG..."))
+PERMANOVA_Knepp_RaosQ_Classic_SG <- adonis2(
+  subset.Knepp_Indices_Comparison_DF$`RaosQ Classic SG (NDVI)` ~ subset.Knepp_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999,
+  parallel     = permanova.cores
+)
+saveRDS(PERMANOVA_Knepp_RaosQ_Classic_SG, file.path(Knepp_PERMANOVA_Dir, "PERMANOVA_Knepp_NDVI_RaosQ_Classic_SG.rds"))
+message(paste0(Sys.time(), ": [2/3] Completed and saved PERMANOVA_Knepp_NDVI_RaosQ_Classic_SG.rds"))
+gc()
+
+# 3. SG-Filtered TWDTW Rao's Q (NDVI)
+
+message(paste0(Sys.time(), ": [3/3] Running PERMANOVA_Knepp_RaosQ_TWDTW_SG..."))
+PERMANOVA_Knepp_RaosQ_TWDTW_SG <- adonis2(
+  subset.Knepp_Indices_Comparison_DF$`RaosQ TWDTW SG (NDVI)` ~ subset.Knepp_Indices_Comparison_DF$Veg_GroundTruth,
+  permutations = 999,
+  parallel     = permanova.cores
+)
+saveRDS(PERMANOVA_Knepp_RaosQ_TWDTW_SG, file.path(Knepp_PERMANOVA_Dir, "PERMANOVA_Knepp_NDVI_RaosQ_TWDTW_SG.rds"))
+message(paste0(Sys.time(), ": [3/3] Completed and saved PERMANOVA_Knepp_NDVI_RaosQ_TWDTW_SG.rds"))
+gc()
+
+### Compile and export final PERMANOVA Summary Table ####
+
+message(paste0(Sys.time(), ": Compiling Knepp NDVI PERMANOVA results..."))
+
+Knepp_NDVI_PERMANOVA_Results <- data.frame(
+  Pipeline = c("SG Filtered", "SG Filtered", "SG Filtered"),
+  Index    = c("Shannon H", "Classic Rao Q", "TWDTW Rao Q"),
+  R2       = c(
+    PERMANOVA_Knepp_ShannonsH_SG$R2[1],
+    PERMANOVA_Knepp_RaosQ_Classic_SG$R2[1],
+    PERMANOVA_Knepp_RaosQ_TWDTW_SG$R2[1]
+  ),
+  F        = c(
+    PERMANOVA_Knepp_ShannonsH_SG$F[1],
+    PERMANOVA_Knepp_RaosQ_Classic_SG$F[1],
+    PERMANOVA_Knepp_RaosQ_TWDTW_SG$F[1]
+  ),
+  p_value  = c(
+    PERMANOVA_Knepp_ShannonsH_SG$`Pr(>F)`[1],
+    PERMANOVA_Knepp_RaosQ_Classic_SG$`Pr(>F)`[1],
+    PERMANOVA_Knepp_RaosQ_TWDTW_SG$`Pr(>F)`[1]
+  )
+)
+
+write.csv(
+  Knepp_NDVI_PERMANOVA_Results,
+  file      = file.path(Knepp_Results, "Knepp_NDVI_PERMANOVA_Summary.csv"),
+  row.names = FALSE
+)
+saveRDS(
+  Knepp_NDVI_PERMANOVA_Results,
+  file = file.path(Knepp_Results, "Knepp_PERMANOVA_Summary_NDVI.rds")
+)
+
+print(Knepp_NDVI_PERMANOVA_Results)
+message("Knepp Estate 2019-2024 NDVI analysis complete!") # End of script ####
