@@ -16,9 +16,9 @@ flush.console()
 
 # 2. Define directories
 base_dir    <- "~/TWDTW_Paper"
-tile_dir    <- file.path(base_dir, "Data/Processed_Data/Knepp_Estate/Knepp_TS_Tiles_NDVI_SG-Filtered")
+tile_dir    <- file.path(base_dir, "Data/Processed Data/Knepp Estate/Knepp_TS_Tiles_NDVI_SG-Filtered")
 out_dir     <- file.path(tile_dir, "Rao-utputs")
-results_dir <- file.path(base_dir, "Results/Knepp_Estate")
+results_dir <- file.path(base_dir, "Results/Knepp Estate")
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 

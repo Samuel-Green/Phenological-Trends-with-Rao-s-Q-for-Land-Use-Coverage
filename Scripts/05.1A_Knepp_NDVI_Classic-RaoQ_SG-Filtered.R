@@ -15,7 +15,7 @@ flush.console()
 
 # 2. Define directories (Update base_dir if your Knepp folder on MaRC3a is named differently)
 base_dir <- "~/TWDTW_Paper"
-tile_dir <- file.path(base_dir, "Data/Processed_Data/Knepp_Estate/Knepp_Tiles_NDVI_SG-Filtered")
+tile_dir <- file.path(base_dir, "Data/Processed Data/Knepp Estate/Knepp_Tiles_NDVI_SG-Filtered")
 out_dir  <- file.path(tile_dir, "Rao-utputs")
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
