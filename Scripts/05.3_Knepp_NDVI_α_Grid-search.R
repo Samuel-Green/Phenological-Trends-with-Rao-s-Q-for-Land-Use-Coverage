@@ -62,7 +62,7 @@ if (dir.exists("E:/Elliot Shayle/Knepp Estate Geodata")) {
 dir.create(Knepp_Processed_Ext, showWarnings = FALSE, recursive = TRUE)
 
 # Cap parallel workers to a safe limit (e.g., 12 cores) to prevent RAM duplication OOM crashes
-knepp.cores <- min(12, max(1, detectCores() - 2))
+knepp.cores <- max(1, detectCores() - 2)
 message("Using ", knepp.cores, " parallel CPU cores for paRao and PERMANOVA.")
 
 ### 2. Import Spatial Vectors & Cleaned 2019-2024 NDVI Timeseries ####
@@ -266,7 +266,7 @@ run_knepp_alpha_step <- function(a_val, sample_ts, dates_vec, lc_consensus, ukce
     progBar      = FALSE,
     method       = "multidimension",
     dist_m       = "twdtw",
-    midpoint     = 6,     # 6 months (or change to 3 for 3-month temperate season inflection)
+    midpoint     = 2,     # 2 months (or change to 3 for 3-month temperate season inflection)
     stepness     = a_val,
     cycle_length = "year",
     time_scale   = "month"
