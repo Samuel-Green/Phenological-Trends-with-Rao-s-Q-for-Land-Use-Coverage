@@ -18,7 +18,7 @@ flush.console()
 base_dir    <- "~/TWDTW_Paper"
 tile_dir    <- file.path(base_dir, "Data/Processed Data/Knepp Estate/Knepp_TS_Tiles_NDVI_SG-Filtered")
 out_dir     <- file.path(tile_dir, "Rao-utputs")
-results_dir <- file.path(base_dir, "Results/Knepp Estate")
+results_dir <- file.path(base_dir, "Results 📈📉/Knepp Estate")
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
