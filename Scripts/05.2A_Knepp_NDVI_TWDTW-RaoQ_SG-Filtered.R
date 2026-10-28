@@ -91,7 +91,7 @@ res <- paRao(
   progBar = FALSE,       # Prevents SLURM log buffer crashes
   method = "multidimension",
   dist_m = "twdtw",
-  midpoint = 6,          # Or 3 if you opt for the 3-month temperate season inflection point
+  midpoint = 2,          # Or 3 if you opt for the 3-month temperate season inflection point
   stepness = opt_alpha,  # Dynamically assigned from your 05.3 Grid Search!
   cycle_length = "year",
   time_scale = "month"
