@@ -49,7 +49,7 @@ dir.create(Knepp_Results, showWarnings = FALSE, recursive = TRUE)
 
 # Allocate cores
 
-permanova.cores <- max(1, detectCores() - 2)
+permanova.cores <- max(1, detectCores() /2.5)
 message("Allocated ", permanova.cores, " CPU cores for adonis2 permutation processing.")
 
 ### 2. Load the Filtered, Stratified Dataframe ####
