@@ -110,33 +110,40 @@ rm(band_map) # Must sit outside the loop
 message("Importing the cropped multi-band rasters...")
 
 # 1. Blue Band (B02)
+
 Knepp_B02_Files       <- list.files(Knepp_Processed_Ext, pattern = "^Knepp_\\d{4}_B02_Cropped\\.tif$", full.names = TRUE)
 Knepp_Blue_Timeseries <- rast(Knepp_B02_Files)
 
 # 2. Green Band (B03)
+
 Knepp_B03_Files        <- list.files(Knepp_Processed_Ext, pattern = "^Knepp_\\d{4}_B03_Cropped\\.tif$", full.names = TRUE)
 Knepp_Green_Timeseries <- rast(Knepp_B03_Files)
 
 # 3. Red Band (B04)
+
 Knepp_B04_Files      <- list.files(Knepp_Processed_Ext, pattern = "^Knepp_\\d{4}_B04_Cropped\\.tif$", full.names = TRUE)
 Knepp_Red_Timeseries <- rast(Knepp_B04_Files)
 
 # 4. Near-Infrared Band (B08)
+
 Knepp_B08_Files      <- list.files(Knepp_Processed_Ext, pattern = "^Knepp_\\d{4}_B08_Cropped\\.tif$", full.names = TRUE)
 Knepp_NIR_Timeseries <- rast(Knepp_B08_Files)
 
 message("Applying standard layer names...")
 
 # Extract years directly from the loaded Blue Timeseries file sources
+
 Knepp.years.loaded <- sub(".*Knepp_(\\d{4})_B02_Cropped\\.tif$", "\\1", basename(Knepp_B02_Files))
 message("Years found on disk: ", paste(Knepp.years.loaded, collapse = ", "))
 
 # Create clean base layer names (e.g., "2019-01", "2019-02")
+
 Knepp.layer.names.base <- unlist(lapply(Knepp.years.loaded, function(y) {
   paste0(y, "-", sprintf("%02d", 1:12))
 }))
 
 # Assign the generated names with explicit band suffixes to each object
+
 names(Knepp_Blue_Timeseries)  <- paste0(Knepp.layer.names.base, "_B02")
 names(Knepp_Green_Timeseries) <- paste0(Knepp.layer.names.base, "_B03")
 names(Knepp_Red_Timeseries)   <- paste0(Knepp.layer.names.base, "_B04")
@@ -144,7 +151,8 @@ names(Knepp_NIR_Timeseries)   <- paste0(Knepp.layer.names.base, "_B08")
 
 ## Exclude disconnected/incomplete edge years (2017) prior to PPI calculation
 # Filtering 2017 out now ensures M (maximum canopy DVI) is calibrated strictly on 2019-2024
-years_to_exclude <- c("2017")
+
+years_to_exclude <- c("2017", "2018")
 exclude_regex    <- paste(years_to_exclude, collapse = "|")
 
 if (any(grepl(exclude_regex, names(Knepp_NIR_Timeseries)))) {
@@ -182,6 +190,7 @@ if (length(expected_dates) != length(Knepp.full.dates)) {
 message("Calculating Astronomical Solar Zenith Angles for Knepp Estate...")
 
 ## 1. Calculate Astronomical Solar Zenith Angles
+
 knepp_ext     <- ext(Knepp_NIR_Timeseries)
 centroid_geom <- vect(
   matrix(c(mean(c(knepp_ext$xmin, knepp_ext$xmax)),
@@ -190,6 +199,7 @@ centroid_geom <- vect(
 )
 
 # Project the centroid to WGS84 to get the latitude in degrees (~50.9 degrees)
+
 centroid_latlon <- project(centroid_geom, "EPSG:4326")
 knepp_lat_deg   <- geom(centroid_latlon)[, "y"]
 knepp_lat_rad   <- knepp_lat_deg * (pi / 180)
@@ -197,28 +207,34 @@ knepp_lat_rad   <- knepp_lat_deg * (pi / 180)
 day_of_year <- as.numeric(strftime(Knepp.full.dates, format = "%j"))
 
 # Calculate solar declination angle (delta) in radians
+
 declination_deg <- 23.45 * sin((2 * pi / 365) * (day_of_year - 81))
 declination_rad <- declination_deg * (pi / 180)
 
 # Calculate hour angle (h) in radians (Sentinel-2 descends at ~10:30 AM local solar time)
+
 hour_angle_deg <- -1.5 * 15
 hour_angle_rad <- hour_angle_deg * (pi / 180)
 
 # Calculate final Solar Zenith Angle (theta_z) vector in radians
+
 cos_theta_z    <- sin(knepp_lat_rad) * sin(declination_rad) +
                   cos(knepp_lat_rad) * cos(declination_rad) * cos(hour_angle_rad)
 sza_rad_vector <- acos(cos_theta_z)
 
 ## 2. Calculate Difference Vegetation Index (DVI)
+
 message("Calculating Difference Vegetation Index (DVI)...")
 
 # Strip any Sentinel-2 integer NoData flags (<= -9000) before subtracting Red from NIR
+
 Knepp_NIR_Timeseries[Knepp_NIR_Timeseries <= -9000] <- NA_real_
 Knepp_Red_Timeseries[Knepp_Red_Timeseries <= -9000] <- NA_real_
 
 Knepp_Buffered_Timeseries.DVI <- Knepp_NIR_Timeseries - Knepp_Red_Timeseries
 
 ## 3. Define the Safe Hybrid PPI Wrapper
+
 message("Defining PPI Wrapper...")
 
 calc_pixel_ppi <- function(dvi_ts, sza_vector) {
@@ -263,6 +279,7 @@ calc_pixel_ppi <- function(dvi_ts, sza_vector) {
 }
 
 ## 4. Apply the PPI function pixel-by-pixel across the 2019-2024 stack
+
 message("Calculating PPI timeseries across all pixels via MitMat's ppi package...")
 
 Knepp_Buffered_Timeseries.PPI <- app(
@@ -273,16 +290,18 @@ Knepp_Buffered_Timeseries.PPI <- app(
 )
 
 # Clamp final PPI to ecologically valid bounds to prevent logarithmic asymptotes skewing TWDTW
+
 Knepp_Buffered_Timeseries.PPI[Knepp_Buffered_Timeseries.PPI < -2] <- NA_real_
 Knepp_Buffered_Timeseries.PPI[Knepp_Buffered_Timeseries.PPI > 10] <- NA_real_
 
 # Assign clean monthly layer names (e.g., "2019-01_PPI")
+
 names(Knepp_Buffered_Timeseries.PPI) <- paste0(sub("_B08$", "", names(Knepp_NIR_Timeseries)), "_PPI")
 
 message("PPI calculation complete! Exporting unsmoothed continuous 2019-2024 PPI stack...")
 
 writeRaster(
-  Knepp_Buffered_Timeseries.PPI,
+  Knepp_Buffered_Timeseries.PPI*1, # *1 so that the raster is transferred to memory as source and target filename cannot be the same
   filename  = file.path(Knepp_Processed, "Knepp_Buffered_PPI_Continuous_Raw_Timeseries.tif"),
   overwrite = TRUE
 )
@@ -297,14 +316,17 @@ Knepp_Buffered_Timeseries.PPI <- rast(
 sg_gapfill <- function(x) {
   
   # If a pixel is NA across all layers (outside the 5 km boundary or pure water), return NAs immediately
+  
   if (all(is.na(x))) {
     return(rep(NA_real_, length(x)))
   }
   
   # 1. Linear interpolation across cloud gaps (rule = 2 pads leading/trailing NAs with nearest valid value)
+  
   x_interp <- zoo::na.approx(x, na.rm = FALSE, rule = 2)
   
   # 2. Savitzky-Golay smoothing (fl = 5 preserves seasonal amplitude; forder = 2 is standard quadratic)
+  
   x_smoothed <- pracma::savgol(
     x_interp,
     fl     = 5,
@@ -323,9 +345,11 @@ Knepp_Buffered_Timeseries.PPI.Cleaned <- app(
 )
 
 # Restore layer names stripped by terra::app()
+
 names(Knepp_Buffered_Timeseries.PPI.Cleaned) <- names(Knepp_Buffered_Timeseries.PPI)
 
 # Re-mask against the buffered boundary to ensure background pixels remain strict NAs
+
 if (crs(KneppEstate_Buffered_Boundaries) != crs(Knepp_Buffered_Timeseries.PPI.Cleaned)) {
   KneppEstate_Buffered_Boundaries <- project(KneppEstate_Buffered_Boundaries, crs(Knepp_Buffered_Timeseries.PPI.Cleaned))
 }
@@ -340,6 +364,7 @@ writeRaster(
 )
 
 # Reload from disk so the SpatRaster points cleanly to the file
+
 Knepp_Buffered_Timeseries.PPI.Cleaned <- rast(
   file.path(Knepp_Processed, "Knepp_Buffered_PPI_Cleaned_SG-method.tif")
 ) # Load it back in!
@@ -389,6 +414,7 @@ lines(Knepp.full.dates, Knepp_Environs_Timeseries.PPI[, 1],
 grid(nx = NA, ny = NULL, col = "lightgray", lty = "dotted")
 
 # Minor monthly ticks and major yearly ticks
+
 axis.Date(1, at = Knepp.full.dates, labels = FALSE, tcl = -0.25)
 axis.Date(1,
           at     = as.Date(paste0(unique(format(Knepp.full.dates, "%Y")), "-01-15")),
@@ -626,6 +652,7 @@ names(Knepp_PPI_Comparison_Rasters) <- c(
 )
 
 # Export the combined 4-layer comparison stack so it doesn't need to be rebuilt each session
+
 writeRaster(
   Knepp_PPI_Comparison_Rasters,
   filename  = file.path(Knepp_Results, "Knepp_2019-2024_PPI_Diversity_Comparison.tif"),
@@ -637,6 +664,7 @@ Knepp_PPI_Comparison_Rasters <- rast(
 ) # Load it back in!
 
 # Export a 2x2 multipanel comparison plot for the manuscript
+
 png(file.path(Knepp_Results, "Knepp_PPI-Based_Indices_Comparison.png"),
     width = 2560, height = 1440, res = 150)
 
@@ -685,6 +713,7 @@ if (file.exists(consensus_lc_path)) {
   Knepp_LandCover_Consensus <- rast(consensus_lc_path)
   
   # Ensure exact grid alignment with Knepp_PPI_Comparison_Rasters
+  
   if (!compareGeom(Knepp_PPI_Comparison_Rasters[[1]], Knepp_LandCover_Consensus, stopOnError = FALSE)) {
     Knepp_LandCover_Consensus <- project(Knepp_LandCover_Consensus, Knepp_PPI_Comparison_Rasters[[1]], method = "near")
   }
@@ -836,6 +865,7 @@ Knepp_PERMANOVA_Dir <- file.path(Knepp_Results, "PERMANOVAs")
 dir.create(Knepp_PERMANOVA_Dir, showWarnings = FALSE, recursive = TRUE)
 
 # Create an explicit PSOCK cluster (capped at 8 cores) to prevent mclapply SIGPIPE OOM crashes
+
 perm_cluster <- makeCluster(permanova.cores)
 
 message(paste0(Sys.time(), ": Starting SG-Filtered Knepp PPI raster PERMANOVAs..."))
